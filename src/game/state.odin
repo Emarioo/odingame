@@ -2,12 +2,11 @@ package game
 
 import "core:time"
 import "core:math"
+import "core:math/linalg"
 
 MAX_ENTITIES :: 1024
 
 FIXED_UPDATE_DELTA :: 1.0/60.0
-
-vec3 :: [3]f32
 
 GameState :: struct {
 
@@ -24,5 +23,5 @@ GameState :: struct {
 }
 
 Entity :: struct {
-    pos: vec3,
+    pos: linalg.Vector3f32,
 }

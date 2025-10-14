@@ -6,7 +6,7 @@ layout (location = 0) in vec2 aPos;
 uniform vec2 uWindow;
 uniform vec2 uPos;
 uniform vec2 uSize;
-uniform vec2 uColor;
+uniform vec4 uColor;
 
 void main()
 {
@@ -17,7 +17,10 @@ void main()
 #version 330 core
 out vec4 FragColor;
 
+uniform vec4 uColor;
+
 void main()
 {
-    FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);
+    FragColor = uColor;
+    // vec4(1.0f, 0.5f, 0.2f, 1.0f);
 } 

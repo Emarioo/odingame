@@ -18,8 +18,8 @@ main :: proc () {
     // fmt.println("Hello, sailor!")
     
     exe_path       := os.args[0]
-    fresh_lib_path := filepath.join([]string{ filepath.dir(exe_path), "/game.so"  })
-    temp_lib_path  := filepath.join([]string{ filepath.dir(exe_path), "/_game.so" })
+    fresh_lib_path := filepath.join([]string{ filepath.dir(exe_path), "/game.dll"  })
+    temp_lib_path  := filepath.join([]string{ filepath.dir(exe_path), "/_game.dll" })
 
     last_modification_time : time.Time
     last_timestamp_check   : time.Time
@@ -31,12 +31,13 @@ main :: proc () {
     ok                     : bool
 
     if ENABLE_HOTRELOAD {
-        copy_file(fresh_lib_path, temp_lib_path)
+        // copy_file(fresh_lib_path, temp_lib_path)
 
-        library, ok = dynlib.load_library(temp_lib_path)
+        library, ok = dynlib.load_library("game.dll")
         if !ok {
+            fmt.println(library)
             fmt.eprintln(dynlib.last_error())
-            fmt.println("Could not load library", temp_lib_path)
+            fmt.println("Could not load library", fresh_lib_path)
             os.exit(1)
         }
         

@@ -1,1 +1,15 @@
 bin
+ols.json
+.vscode
+*.code-workspace
+
+*.o
+*.dll
+*.so
+*.bin
+*.exe
+*.lib
+*.exp
+*.a
+*.pdb
+*.exp

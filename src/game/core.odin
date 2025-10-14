@@ -4,7 +4,6 @@ import "core:fmt"
 import "../driver"
 import "core:time"
 
-
 @(export)
 driver_event :: proc (event: driver.EventKind, data: ^driver.EventData) {
     if event != driver.EventKind.EVENT_TICK {
@@ -52,5 +51,5 @@ tick :: proc (state: ^GameState) {
     
     render_state(state)
 
-    time.sleep(10 * 1000000)
+    time.sleep(16 * 1000000)
 }
