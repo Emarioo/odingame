@@ -4,7 +4,7 @@ ASSIMP_SHARED :: #config(ASSIMP_SHARED, false)
 
 when ODIN_OS == .Windows {
 	foreign import assimp {
-		"windows/assimp-vc143-mtd.dll" when ASSIMP_SHARED else "windows/assimp-vc143-mtd.lib",
+		"windows/shared/assimp-vc143-mtddll.lib" when ASSIMP_SHARED else "windows/static/assimp-vc143-mtd.lib",
 	}
 } else when ODIN_OS == .Linux  {
 	foreign import lib {
@@ -68,8 +68,8 @@ aiVertexWeight :: struct {
     mWeight : f32,
 }
 
-aiVector3D :: struct { xyz : [3]f32 }
-aiColor4D :: struct { xyzw : [4]f32 }
+aiVector3D :: [3]f32
+aiColor4D :: [4]f32
 
 
 aiMorphingMethod :: enum {
@@ -222,8 +222,73 @@ aiPostProcessSteps :: enum {
     aiProcess_GenBoundingBoxes = 0x80000000
 };
 
+// type,index fields passed to aiGetMaterialXXX for all of these are 0,0
+AI_MATKEY_NAME                    :: "?mat.name"
+AI_MATKEY_TWOSIDED                :: "$mat.twosided"
+AI_MATKEY_SHADING_MODEL           :: "$mat.shadingm"
+AI_MATKEY_ENABLE_WIREFRAME        :: "$mat.wireframe"
+AI_MATKEY_BLEND_FUNC              :: "$mat.blend"
+AI_MATKEY_OPACITY                 :: "$mat.opacity"
+AI_MATKEY_TRANSPARENCYFACTOR      :: "$mat.transparencyfactor"
+AI_MATKEY_BUMPSCALING             :: "$mat.bumpscaling"
+AI_MATKEY_SHININESS               :: "$mat.shininess"
+AI_MATKEY_REFLECTIVITY            :: "$mat.reflectivity"
+AI_MATKEY_SHININESS_STRENGTH      :: "$mat.shinpercent"
+AI_MATKEY_REFRACTI                :: "$mat.refracti"
+AI_MATKEY_COLOR_DIFFUSE           :: "$clr.diffuse"
+AI_MATKEY_COLOR_AMBIENT           :: "$clr.ambient"
+AI_MATKEY_COLOR_SPECULAR          :: "$clr.specular"
+AI_MATKEY_COLOR_EMISSIVE          :: "$clr.emissive"
+AI_MATKEY_COLOR_TRANSPARENT       :: "$clr.transparent"
+AI_MATKEY_COLOR_REFLECTIVE        :: "$clr.reflective"
+AI_MATKEY_GLOBAL_BACKGROUND_IMAGE :: "?bg.global"
+AI_MATKEY_GLOBAL_SHADERLANG       :: "?sh.lang"
+AI_MATKEY_SHADER_VERTEX           :: "?sh.vs"
+AI_MATKEY_SHADER_FRAGMENT         :: "?sh.fs"
+AI_MATKEY_SHADER_GEO              :: "?sh.gs"
+AI_MATKEY_SHADER_TESSELATION      :: "?sh.ts"
+AI_MATKEY_SHADER_PRIMITIVE        :: "?sh.ps"
+AI_MATKEY_SHADER_COMPUTE          :: "?sh.cs"
+
+
+aiReturn :: enum {
+    /** Indicates that a function was successful */
+    aiReturn_SUCCESS = 0x0,
+
+    /** Indicates that a function failed */
+    aiReturn_FAILURE = -0x1,
+
+    /** Indicates that not enough memory was available
+     * to perform the requested operation
+     */
+    aiReturn_OUTOFMEMORY = -0x3,
+
+    /** @cond never
+     *  Force 32-bit size enum
+     */
+    _AI_ENFORCE_ENUM_SIZE = 0x7fffffff
+
+    /// @endcond
+}
+
 foreign assimp {
 	aiImportFile :: proc "c" (pFile: cstring, pFlags: u32) -> ^aiScene ---
 	aiGetErrorString :: proc "c" () -> cstring ---
 	aiReleaseImport :: proc "c" (pScene: ^aiScene) ---
+
+    aiGetMaterialIntegerArray :: proc "c" (pMat: ^aiMaterial,
+        pKey: cstring,
+        type: u32,
+        index: u32,
+        pOut: ^i32,
+        pMax: ^u32) -> aiReturn ---;
+
+    aiGetMaterialFloatArray :: proc "c" (
+            pMat: ^aiMaterial,
+            pKey: cstring,
+            type: u32,
+            index: u32,
+            pOut: ^ai_real,
+            pMax: ^u32) -> aiReturn ---;
+    
 }

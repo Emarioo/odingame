@@ -196,6 +196,11 @@ Model :: struct {
     mesh : Mesh,
 }
 
+Material :: struct {
+    diffuse : vec3,
+    specular : vec3,
+}
+
 update_projection :: proc (render : ^RenderState) {
     projection := glsl.mat4Perspective( 90.0/(180/math.PI), cast(f32)render.width/cast(f32)render.height, 0.1, 400)
     model_view := glsl.inverse_mat4(
@@ -303,13 +308,27 @@ load_model :: proc (path : string) -> (model: Model) {
     Vertex :: struct {
         // See object.glsl shader
         pos : vec3,
+        normal : vec3,
+        texture : vec3,
     }   
 
-    vertices := make([]Vertex, mesh.mNumVertices * 3)
+    vertices := make([]Vertex, mesh.mNumVertices * size_of(Vertex) / size_of(f32))
     indices  := make([]u32, mesh.mNumFaces * 3)
 
     for i in 0..<mesh.mNumVertices {
-        vertices[i].pos = mesh.mVertices[i].xyz
+        vertices[i].pos = mesh.mVertices[i]
+    }
+    if mesh.mNormals != nil {
+        for i in 0..<mesh.mNumVertices {
+            vertices[i].normal = mesh.mNormals[i]
+        }
+    }
+    if mesh.mTextureCoords[0] != nil {
+        assert(mesh.mNumUVComponents[0] == 2)
+        for i in 0..<mesh.mNumVertices {
+            vertices[i].texture.xy = mesh.mTextureCoords[0][i].xy
+            vertices[i].texture.z = 0.0 // local material index (used in shader, uMaterials[0])
+        }
     }
 
     for i in 0..<mesh.mNumFaces {
@@ -335,21 +354,25 @@ render_state :: proc (state: ^GameState) {
         return
     }
 
-    glfw.PollEvents()
+    // glfw.PollEvents()
+    glfw.WaitEventsTimeout(1/144.0)
     
     update_camera(render)
     update_projection(render)
 
     gl.Viewport(0, 0, render.width, render.height)
     gl.ClearColor(0.2,0.3,0.3,1.0)
-    gl.Clear(gl.COLOR_BUFFER_BIT)
+    gl.Clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)
 
 
     
 
     // cull face
     // depth alpha
-    gl.Disable(gl.CULL_FACE)
+    // gl.Disable(gl.CULL_FACE)
+    gl.Enable(gl.CULL_FACE)
+    gl.Enable(gl.DEPTH_TEST)
+
 
     
 
@@ -379,7 +402,49 @@ render_model :: proc (state: ^GameState, model: Model, pos: vec3) {
 
     gl.UniformMatrix4fv(render.object_shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
     gl.UniformMatrix4fv(render.object_shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    // gl.Uniform3f(render.object_shader.uniforms["uCameraPos"].location, render.camera_pos.x, render.camera_pos.y, render.camera_pos.z)
+    gl.Uniform3f(render.object_shader.uniforms["uCameraPos"].location,
+        render.camera_position.x, render.camera_position.y, render.camera_position.z)
+
+    mesh := model.scene.mMeshes[0]
+    material := model.scene.mMaterials[mesh.mMaterialIndex]
+    // gl.UniformMatrix4fv(render.object_shader.uniforms["uMaterials"].location, )
+    // gl.UniformMatrix4fv(render.object_shader.uniforms["uLightSpaceMatrix"].location, )
+
+    max: u32 = 4
+    color: ai.aiColor4D
+    ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_DIFFUSE, 0, 0, transmute([^]f32)&color, &max)
+    if max != 4 {
+        color.a = 1.0
+    }
+    gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].diffuse_color"].location, 1, transmute([^]f32)&color)
+
+    max = 4
+    ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_SPECULAR, 0, 0, transmute([^]f32)&color, &max)
+    if max != 4 {
+        color.a = 1.0
+    }
+    gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].specular_color"].location, 1, transmute([^]f32)&color)
+
+    max = 1
+    shiny: f32
+    ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_SHININESS, 0, 0, transmute([^]f32)&shiny, &max)
+    gl.Uniform1f(render.object_shader.uniforms["uMaterials[0].shininess"].location, shiny)
+
+
+    gl.Uniform3i(render.object_shader.uniforms["uLightCount"].location, 1, 0, 0)
+    
+    dir_light := glsl.normalize_vec3(vec3{0.1, -1, 0.2})
+    dir_ambient := glsl.normalize_vec3(vec3{0.2, 0.2, 0.2})
+    dir_diffuse := glsl.normalize_vec3(vec3{0.8, 0.8, 0.2})
+    dir_specular := glsl.normalize_vec3(vec3{1.0, 1.0, 0.8})
+    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.direction"].location, 1, transmute([^]f32)&dir_light)
+    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.ambient"].location, 1, transmute([^]f32)&dir_ambient)
+    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.diffuse"].location, 1, transmute([^]f32)&dir_diffuse)
+    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.specular"].location, 1, transmute([^]f32)&dir_specular)
+
+    // gl.UniformMatrix4fv(render.object_shader.uniforms["uSpotLights"].location, )
+    // gl.UniformMatrix4fv(render.object_shader.uniforms["uPointLights"].location, )
+    // gl.UniformMatrix4fv(render.object_shader.uniforms["shadow_map"].location, )
 
     gl.BindVertexArray(model.mesh.vao)
     gl.DrawElements(gl.TRIANGLES, model.mesh.index_count, gl.UNSIGNED_INT, nil)
@@ -419,16 +484,16 @@ create_mesh :: proc (vertex_data: []f32, index_data: []u32) -> (mesh: Mesh) {
     gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(index_data) * size_of(u32), raw_data(index_data), gl.STATIC_DRAW)
 
     // position attribute
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 3, cast(uintptr)0)
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 9, cast(uintptr)0)
 	gl.EnableVertexAttribArray(0)
 
-    // color attribyte
-    // gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(3*size_of(f32)))
-	// gl.EnableVertexAttribArray(1)
+    // normal attribyte
+    gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 9, cast(uintptr)(3*size_of(f32)))
+	gl.EnableVertexAttribArray(1)
         
     // texture coordinate attribute
-	// gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(6*size_of(f32)))
-	// gl.EnableVertexAttribArray(2)
+	gl.VertexAttribPointer(2, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 9, cast(uintptr)(6*size_of(f32)))
+	gl.EnableVertexAttribArray(2)
 
     gl.BindVertexArray(0)
 

@@ -31,13 +31,13 @@ main :: proc () {
     ok                     : bool
 
     if ENABLE_HOTRELOAD {
-        // copy_file(fresh_lib_path, temp_lib_path)
+        copy_file(fresh_lib_path, temp_lib_path)
 
-        library, ok = dynlib.load_library("game.dll")
+        library, ok = dynlib.load_library(temp_lib_path)
         if !ok {
             fmt.println(library)
             fmt.eprintln(dynlib.last_error())
-            fmt.println("Could not load library", fresh_lib_path)
+            fmt.println("Could not load library", temp_lib_path)
             os.exit(1)
         }
         
@@ -58,6 +58,9 @@ main :: proc () {
 
     data: EventData
     data.running = true
+
+    // we need to load glfw3.dll and assimp.dll dynamically so they don't unload
+    // when we unload the game.dll
 
     func_event(EventKind.EVENT_LOAD, &data)
     func_event(EventKind.EVENT_START, &data)

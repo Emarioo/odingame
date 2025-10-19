@@ -1,8 +1,14 @@
+# This project's intermediate files
 bin
+# git clones, dependencies
+extern
+
+# IDE stuff
 ols.json
 .vscode
 *.code-workspace
 
+# Binaries
 *.o
 *.dll
 *.so
