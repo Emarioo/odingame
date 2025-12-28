@@ -25,7 +25,8 @@ void main()
 	// }
 	fPos = vec3(transform * vec4(vPos,1));
 
-	fNormal = fPos-vec3(transform * vec4(vPos-vNormal, 1));
+	// fNormal = fPos-vec3(transform * vec4(vPos-vNormal, 1));
+	fNormal = vNormal;
 
 	fUV = vTexture.xy;
 	fMaterial = int(vTexture.z);
@@ -97,7 +98,7 @@ in vec4 fPosLightSpace;
 
 
 float ShadowBias(float shadow, float bias) {
-	return shadow - bias > 0 ? 1 : 0;
+	return shadow - bias > 0.0 ? 1.0 : 0.0;
 }
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, float shadow) {
 	vec3 lightDir = normalize(light.position - fragPos);
@@ -167,7 +168,7 @@ float ShadowCalculation(vec4 fPosLightSpace) {
 
 	projCoords = projCoords * 0.5 + 0.5;
 	if (projCoords.z>1) {
-		return 0;
+		return 0.0;
 	}
 	float bias = 0.005;
 	float shadow = 0;
@@ -179,7 +180,7 @@ float ShadowCalculation(vec4 fPosLightSpace) {
 		}
 	}
 	
-	return shadow/9;
+	return shadow/9.0;
 	/*
 	float closestDepth = texture(shadow_map, projCoords.xy).r;
 	shadow = projCoords.z - bias > closestDepth ? 1 : 0;

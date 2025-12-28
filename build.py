@@ -16,13 +16,13 @@ def main():
     proc = subprocess.run(["odin", "root"], text=True, stdout=subprocess.PIPE)
     odin_path = proc.stdout
     # Use different path on linux
-    glfw_path = f"{odin_path}vendor\\glfw\\lib\\glfw3.dll"
 
     ROOT = os.path.dirname(__file__)
     OS = platform.system().lower()
     LIB_DIR = f"{ROOT}/lib/assimp/{OS}"
 
     if platform.system() == "Windows":
+        glfw_path = f"{odin_path}vendor\\glfw\\lib\\glfw3.dll"
         assimp_path_dll = glob.glob(f"{LIB_DIR}/shared/assimp*.dll")
         if len(assimp_path_dll) > 0:
             assimp_path = assimp_path_dll[0]
@@ -37,7 +37,17 @@ def main():
         except:
                 pass # we assume dll is in use
     else:
-        pass
+        # take glfw from system path?
+        # glfw_path = f"{odin_path}vendor/glfw/lib/glfw3.so"
+        assimp_path = f"{LIB_DIR}/libassimp.so"
+        try:
+            shutil.copy(assimp_path, f"bin/{os.path.basename(assimp_path)}.6")
+        except:
+            pass # we assume dll is in use
+        # try:
+        #     shutil.copy(glfw_path, "bin/libglfw3.so")
+        # except:
+        #         pass # we assume dll is in use
 
     odin_flags = f"-collection:lib=lib -debug -o:none"
 
@@ -49,7 +59,7 @@ def main():
     else:
         run(f"odin build src/game {odin_flags} -define:GLFW_SHARED=true -define:ASSIMP_SHARED=true -build-mode:shared -out:{os.path.join('bin','game.so')}")
         if not hotreload:
-            run(f"odin run src/driver -keep-executable {odin_flags} -out:{os.path.join('bin','driver')}")
+            run(f"odin run src/driver {odin_flags} -out:{os.path.join('bin','driver')}")
 
 
 def has_assimp():
@@ -88,7 +98,7 @@ def build_assimp():
 
     os.makedirs("build", exist_ok=True)
 
-    run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=ON -DASSIMP_BUILD_TESTS=OFF")
+    run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=ON -DASSIMP_BUILD_ZLIB=ON -DASSIMP_BUILD_TESTS=OFF")
     run("cmake --build . --parallel 16")
 
     # # Windows has shared and static sub dirs to keep the dll .pdb and lib .pdb separate (since we can't rename them)
@@ -106,10 +116,10 @@ def build_assimp():
             break
     else:
         for dll in glob.glob("bin/libassimp*.so"):
-            shutil.copy(dll, "{ROOT}/lib/assimp/{OS}/libassimp.so")
+            shutil.copy(dll, f"{ROOT}/lib/assimp/{OS}/libassimp.so")
             break
 
-    run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_TESTS=OFF")
+    run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_ZLIB=ON -DASSIMP_BUILD_TESTS=OFF")
     run("cmake --build . --parallel 16")
     
     if platform.system() == "Windows":
@@ -127,6 +137,7 @@ def build_assimp():
     os.chdir(ROOT)
 
 def run(cmd):
+    # print(cmd)
     if platform.system() == "Linux":
         res = os.system(cmd) >> 8
     else:

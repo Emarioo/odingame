@@ -7,7 +7,7 @@ when ODIN_OS == .Windows {
 		"windows/shared/assimp-vc143-mtddll.lib" when ASSIMP_SHARED else "windows/static/assimp-vc143-mtd.lib",
 	}
 } else when ODIN_OS == .Linux  {
-	foreign import lib {
+	foreign import assimp {
 		"linux/libassimp.so" when ASSIMP_SHARED else "linux/libassimp.a",
 	}
 } else {

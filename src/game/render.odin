@@ -75,9 +75,9 @@ init_render_state :: proc (state: ^GameState) {
 
     render.mesh_rect = create_rect()
 
-    block_path := "asset/models/block.glb"
+    // block_path := "asset/models/block.glb"
+    block_path := "asset/models/cube.glb"
     render.block_model = load_model(block_path)
-
     fmt.println("(loaded models)")
 
     global_render_state = render
@@ -87,7 +87,11 @@ init_render_state :: proc (state: ^GameState) {
     glfw.SetCursorPosCallback(render.window, CursorPosProc)
     glfw.SetScrollCallback(render.window, ScrollProc)
     glfw.SetWindowSizeCallback(render.window, WindowSizeProc)
-    
+
+    // hyprland may change the window size even if
+    // we specify 800x600 when creating window.
+    // We make sure to get the real size here.
+    render.width, render.height = glfw.GetWindowSize(render.window)
 }
 
 Shader :: struct {
@@ -162,6 +166,7 @@ WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     assert(global_render_state.window == window)
     global_render_state.width = cast(i32)width
     global_render_state.height = cast(i32)height
+    fmt.println("Windows size: ", width, " ", height);
 }
 
 load_shader :: proc (path : string) -> (shader: Shader) {
@@ -332,9 +337,11 @@ load_model :: proc (path : string) -> (model: Model) {
     }
 
     for i in 0..<mesh.mNumFaces {
-        indices[3*i + 0] = mesh.mFaces[i].mIndices[0]
+        // Seems like assimp and opengl has different
+        // order for which is the front of the face (clockwise vs counter clockwise)
+        indices[3*i + 0] = mesh.mFaces[i].mIndices[2]
         indices[3*i + 1] = mesh.mFaces[i].mIndices[1]
-        indices[3*i + 2] = mesh.mFaces[i].mIndices[2]
+        indices[3*i + 2] = mesh.mFaces[i].mIndices[0]
     }
 
     f32_vertices := slice.from_ptr(cast(^f32) slice.first_ptr(vertices), len(vertices) * size_of(Vertex) / size_of(f32))

@@ -18,8 +18,15 @@ main :: proc () {
     // fmt.println("Hello, sailor!")
     
     exe_path       := os.args[0]
-    fresh_lib_path := filepath.join([]string{ filepath.dir(exe_path), "/game.dll"  })
-    temp_lib_path  := filepath.join([]string{ filepath.dir(exe_path), "/_game.dll" })
+    fresh_lib_path : string 
+    temp_lib_path  : string
+    when ODIN_OS == .Linux {
+        fresh_lib_path = filepath.join([]string{ filepath.dir(exe_path), "/game.so" })
+        temp_lib_path  = filepath.join([]string{ filepath.dir(exe_path), "/_game.so"  })
+    } else {
+        fresh_lib_path = filepath.join([]string{ filepath.dir(exe_path), "/game.dll" })
+        temp_lib_path  = filepath.join([]string{ filepath.dir(exe_path), "/_game.dll"  })
+    }
 
     last_modification_time : time.Time
     last_timestamp_check   : time.Time

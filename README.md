@@ -6,6 +6,7 @@ Game made in odin?
 # Building
 **Dependencies**
 - Odin
+- Clang (odin uses clang?)
 - GLFW
 - OpenGL
 - Assimp
