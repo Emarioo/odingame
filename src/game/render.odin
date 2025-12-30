@@ -59,6 +59,17 @@ init_render_state :: proc (state: ^GameState) {
     render.height = 600
     render.window = glfw.CreateWindow(render.width, render.height, cstring("Game"), nil, nil)
 
+    // hyprland may change the window size even if
+    // we specify 800x600 when creating window.
+    // We make sure to get the real size here.
+    render.width, render.height = glfw.GetWindowSize(render.window)
+
+    glfw.SetKeyCallback(render.window, KeyProc)
+    glfw.SetMouseButtonCallback(render.window, MouseButtonProc)
+    glfw.SetCursorPosCallback(render.window, CursorPosProc)
+    glfw.SetScrollCallback(render.window, ScrollProc)
+    glfw.SetWindowSizeCallback(render.window, WindowSizeProc)
+
     glfw.MakeContextCurrent(render.window)
 
     gl.load_up_to(4, 5, glfw.gl_set_proc_address);
@@ -75,23 +86,13 @@ init_render_state :: proc (state: ^GameState) {
 
     render.mesh_rect = create_rect()
 
-    // block_path := "asset/models/block.glb"
-    block_path := "asset/models/cube.glb"
+    block_path := "asset/models/block.glb"
+    // block_path := "asset/models/cube.glb"
     render.block_model = load_model(block_path)
     fmt.println("(loaded models)")
 
     global_render_state = render
 
-    glfw.SetKeyCallback(render.window, KeyProc)
-    glfw.SetMouseButtonCallback(render.window, MouseButtonProc)
-    glfw.SetCursorPosCallback(render.window, CursorPosProc)
-    glfw.SetScrollCallback(render.window, ScrollProc)
-    glfw.SetWindowSizeCallback(render.window, WindowSizeProc)
-
-    // hyprland may change the window size even if
-    // we specify 800x600 when creating window.
-    // We make sure to get the real size here.
-    render.width, render.height = glfw.GetWindowSize(render.window)
 }
 
 Shader :: struct {
@@ -166,7 +167,7 @@ WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     assert(global_render_state.window == window)
     global_render_state.width = cast(i32)width
     global_render_state.height = cast(i32)height
-    fmt.println("Windows size: ", width, " ", height);
+    // fmt.println("Windows size: ", width, " ", height);
 }
 
 load_shader :: proc (path : string) -> (shader: Shader) {
@@ -229,8 +230,6 @@ update_camera :: proc (render : ^RenderState) {
         // fmt.println(dx, dy)
         rawX := -cast(f32)(dx) * (math.PI / 360.0) * render.cameraSensitivity;
         rawY := -cast(f32)(dy) * (math.PI / 360.0) * render.cameraSensitivity;
-        render.last_mx = render.mx
-        render.last_my = render.my
         // e.window->m_tickRawMouseX += rawX;
         // e.window->m_frameRawMouseX += rawX;
         // e.window->m_tickRawMouseY += rawY;
@@ -250,6 +249,10 @@ update_camera :: proc (render : ^RenderState) {
         rot.y = math.remainder_f32(rot.y, math.PI * 2);
         render.camera_rotation = rot
     }
+    // Last mouse pos shall be set even when
+    // we aren't in "focused" mode
+    render.last_mx = render.mx
+    render.last_my = render.my
 
     speed: f32 = 0.05
 
@@ -430,7 +433,7 @@ render_model :: proc (state: ^GameState, model: Model, pos: vec3) {
     if max != 4 {
         color.a = 1.0
     }
-    gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].specular_color"].location, 1, transmute([^]f32)&color)
+    gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].specular"].location, 1, transmute([^]f32)&color)
 
     max = 1
     shiny: f32

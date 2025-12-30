@@ -17,6 +17,7 @@ driver_event :: proc (event: driver.EventKind, data: ^driver.EventData) {
             game_state.running = true
             
             init_render_state(game_state)
+            update_init(game_state)
             
         case .EVENT_STOP:
             // TODO: cleanup

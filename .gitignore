@@ -19,3 +19,6 @@ ols.json
 *.a
 *.pdb
 *.exp
+
+# Game related
+spells
