@@ -29,7 +29,6 @@ driver_event :: proc (event: driver.EventKind, data: ^driver.EventData) {
             game_state := cast(^GameState)data.user_data
             tick(game_state)
             data.running = game_state.running
-            
     }
 }
 
@@ -41,13 +40,16 @@ tick :: proc (state: ^GameState) {
     }
 
     now := time.now()
-    state.delta = cast(f64)(time.time_to_unix_nano(now) - time.time_to_unix_nano(state.lastTime)) / 1.0e9
+    state.delta = cast(f32)(time.time_to_unix_nano(now) - time.time_to_unix_nano(state.lastTime)) / 1.0e9
     state.lastTime = now
-    state.accDeltaTime += state.delta
+    state.accDeltaTime += cast(f64)state.delta
 
     for state.accDeltaTime > FIXED_UPDATE_DELTA {
         state.accDeltaTime -= FIXED_UPDATE_DELTA
         update_state(state)
+        state.current_tick += 1
+        state.render_state.prev_move = state.render_state.move
+        state.render_state.move = {}
     }
     
     render_state(state)

@@ -16,6 +16,17 @@ import "base:runtime"
 vec3 :: glsl.vec3
 mat4 :: glsl.mat4
 
+ActionEvent :: enum {
+    MOVE_FORWARD,
+    MOVE_LEFT,
+    MOVE_RIGHT,
+    MOVE_BACKWARD,
+    MOVE_UP,
+    MOVE_DOWN,
+    MOVE_SPRINT,
+    MOVE_MAX,
+}
+
 RenderState :: struct {
     window: glfw.WindowHandle,
     width, height: i32,
@@ -35,8 +46,8 @@ RenderState :: struct {
     mx, my : i32,
     last_mx, last_my : i32,
 
-    move: [6]bool,
-    sprint: bool,
+    prev_move: [ActionEvent.MOVE_MAX]bool, // move in previous tick
+    move: [ActionEvent.MOVE_MAX]bool,
 
     cursor_locked : bool,
 
@@ -120,25 +131,25 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     }
 
     if key == glfw.KEY_W {
-        global_render_state.move[0] = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_FORWARD] = action != glfw.RELEASE
     }
     if key == glfw.KEY_A {
-        global_render_state.move[1] = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_LEFT] = action != glfw.RELEASE
     }
     if key == glfw.KEY_S {
-        global_render_state.move[2] = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_BACKWARD] = action != glfw.RELEASE
     }
     if key == glfw.KEY_D {
-        global_render_state.move[3] = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_RIGHT] = action != glfw.RELEASE
     }
     if key == glfw.KEY_SPACE {
-        global_render_state.move[4] = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_UP] = action != glfw.RELEASE
     }
     if key == glfw.KEY_LEFT_CONTROL {
-        global_render_state.move[5] = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_DOWN] = action != glfw.RELEASE
     }
     if key == glfw.KEY_LEFT_SHIFT {
-        global_render_state.sprint = action != glfw.RELEASE
+        global_render_state.move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
     }
 
     // fmt.println("key",key,scancode,action,mods)
@@ -253,46 +264,6 @@ update_camera :: proc (render : ^RenderState) {
     // we aren't in "focused" mode
     render.last_mx = render.mx
     render.last_my = render.my
-
-    speed: f32 = 0.05
-
-    if render.sprint {
-        speed *= 3.0
-    }
-
-    // look_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) *
-    //             glsl.mat4Rotate(vec3{1,0,0}, render.camera_rotation.x)
-    // look_vector := glsl.normalize_vec3(look_mat[2].xyz)
-
-    forward_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y)
-    right_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y + math.PI/2)
-    forward_vector := glsl.normalize_vec3(forward_mat[2].xyz)
-    right_vector := glsl.normalize_vec3(right_mat[2].xyz)
-    up_vector := vec3{0,1,0}
-    if render.move[0] {
-        // forward
-        render.camera_position += -forward_vector * speed
-    }
-    if render.move[1] {
-        // right
-        render.camera_position += -right_vector * speed
-    }
-    if render.move[2] {
-        // back
-        render.camera_position += forward_vector * speed
-    }
-    if render.move[3] {
-        // left
-        render.camera_position += right_vector * speed
-    }
-    if render.move[4] {
-        // up
-        render.camera_position += up_vector * speed
-    }
-    if render.move[5] {
-        // down
-        render.camera_position += -up_vector * speed
-    }
 }
 
 load_model :: proc (path : string) -> (model: Model) {

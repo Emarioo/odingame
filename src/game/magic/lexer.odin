@@ -5,7 +5,7 @@ import "core:os"
 import "core:strings"
 
 TokenKind :: enum {
-    END_OF_FILE,
+    T_EOF,
 
     // Literals
     T_IDENTIFIER,
@@ -21,12 +21,26 @@ TokenKind :: enum {
     T_IN,
 }
 
+TokenFlags :: enum {
+    F_NONE,
+    F_SPACE,
+    F_NEWLINE,
+}
+
+
+token_to_string :: proc (tok: ^Token) -> string {
+    return tok.lexeme
+}
+
 Token :: struct {
     kind: TokenKind,
     lexeme: string,
     line: int,
     column: int,
+    flags: TokenFlags,
 }
+
+EOF_TOKEN: Token = { .T_EOF, "", 0, 0, .F_NONE }
 
 lex_text :: proc(text: string) -> [dynamic]Token {
     tokens: [dynamic]Token
@@ -46,8 +60,14 @@ lex_text :: proc(text: string) -> [dynamic]Token {
         column+=1
 
         if c == '#' {
+            if len(tokens) > 0 {
+                tokens[len(tokens)-1].flags |= .F_SPACE
+            }
             for head < len(text) {
                 if text[head] == '\n' {
+                    if len(tokens) > 0 {
+                        tokens[len(tokens)-1].flags |= .F_NEWLINE
+                    }
                     head+=1
                     break
                 }
@@ -60,9 +80,15 @@ lex_text :: proc(text: string) -> [dynamic]Token {
         if c == '\n' {
             line+=1
             column=1
+            if len(tokens) > 0 {
+                tokens[len(tokens)-1].flags |= .F_NEWLINE
+            }
             continue
         }
         if c == ' ' || c == '\r' || c == '\t' || c == '\f' {
+            if len(tokens) > 0 {
+                tokens[len(tokens)-1].flags |= .F_SPACE
+            }
             continue
         }
 
@@ -88,7 +114,7 @@ lex_text :: proc(text: string) -> [dynamic]Token {
                 case "in": kind = .T_IN
                 case "finis": kind = .T_FINIS
             }
-            append(&tokens, Token{kind, word, cur_line, cur_column})
+            append(&tokens, Token{kind, word, cur_line, cur_column, .F_NONE})
             continue
         }
 
@@ -112,10 +138,10 @@ lex_text :: proc(text: string) -> [dynamic]Token {
                 break
             }
             num : string = text[start:head]
-            append(&tokens, Token{.T_NUMBER, num, cur_line, cur_column})
+            append(&tokens, Token{.T_NUMBER, num, cur_line, cur_column, .F_NONE})
             continue
         }
-        append(&tokens, Token{cast(TokenKind) c, string([]u8{c}), cur_line, cur_column})
+        append(&tokens, Token{cast(TokenKind) c, text[head-1:head], cur_line, cur_column, .F_NONE})
     }
 
     return tokens

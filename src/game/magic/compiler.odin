@@ -4,6 +4,7 @@ import "core:os"
 import "core:os/os2"
 import "core:fmt"
 import "core:strings"
+import "core:c/libc"
 
 /*
     Compiles spells
@@ -19,6 +20,10 @@ TranspileContext :: struct {
     tokens: [dynamic]Token,
 
     output: [dynamic]u8,
+
+    error_jmpbuf: libc.jmp_buf,
+    error_location: ^Token,
+    error_message: string,
 }
 
 transpile_spell :: proc (text: string) {
@@ -27,7 +32,11 @@ transpile_spell :: proc (text: string) {
     ctx.head = 0
     ctx.tokens = lex_text(text)
 
-    parse_text(&ctx)
+    if libc.setjmp(&ctx.error_jmpbuf) == 0 {
+        parse_text(&ctx)
+    } else {
+        fmt.printfln("error {0}:{1}: {2}", ctx.error_location.line, ctx.error_location.column, ctx.error_message)
+    }
 
     os2.mkdir("spells", 0o777)
     
@@ -38,42 +47,120 @@ transpile_spell :: proc (text: string) {
     compile_odin("spells", "libspell.so")
 }
 
+parse_error :: proc (ctx: ^TranspileContext, loc: ^Token, format: string, args: ..any) {
+    ctx.error_message = fmt.aprintf(format, .. args)
+    ctx.error_location = loc
+    libc.longjmp(&ctx.error_jmpbuf, 1)
+}
 
+peek :: proc (ctx: ^TranspileContext, n: int = 0) -> ^Token {
+    if ctx.head + n >= len(ctx.tokens) {
+        return &EOF_TOKEN
+    }
+    return &ctx.tokens[ctx.head+n]
+}
+advance :: proc (ctx: ^TranspileContext, n: int = 1) {
+    if ctx.head + n > len(ctx.tokens) {
+        return
+    }
+    ctx.head += n
+}
 
 parse_text :: proc (ctx: ^TranspileContext) {
 
     append(&ctx.output, `
-    package spell;
+// AUTO GENERATED, DO NOT MODIFY, IT WILL BE OVERWRITTEN
+package spell;
 
-    import "core:math/linalg/glsl"
+import "core:math/linalg/glsl"
 
-    vec3 :: glsl.vec3
+vec3 :: glsl.vec3
 
-    Entity :: struct {
-      pos: vec3,
-      vel: vec3,
-      rot: vec3,
-      acc: vec3,
-    }
+Entity :: struct {
+    pos: vec3,
+    vel: vec3,
+    rot: vec3,
+    acc: vec3,
+}
+Catalyst :: struct {
+    energy: f32,
+    capacity: f32,
+    generation: f32,
+}
 
-    SpellContext :: struct {
-      caster: ^Entity
-    }`)
+SpellContext :: struct {
+    caster: ^Entity,
+    catalyst: ^Catalyst,
+    closest_entity : proc (origin: vec3, min_distance: f32, max_distance: f32) -> ^Entity,
+    entities_in_sphere : proc (origin: vec3, min_distance: f32, max_distance: f32) -> []^Entity,
+}
+
+`)
 
     for {
+        tok := peek(ctx)
 
+        if tok.kind == .T_EOF {
+            parse_error(ctx, tok, "Catalyst rejects the incomplete scripture.")
+        }
+
+        if tok.kind == .T_INCIPERE || tok.kind == .T_PERMANERE || tok.kind == .T_PERFICERE {
+            advance(ctx)
+
+            begin_text: string
+            #partial switch tok.kind {
+                case .T_INCIPERE: begin_text = 
+                    "@(export) on_begin :: proc(ctx: ^SpellContext) {\n"
+                case .T_PERMANERE: begin_text = 
+                    "@(export) on_casting :: proc(ctx: ^SpellContext) {\n"
+                case .T_PERFICERE: begin_text = 
+                    "@(export) on_complete :: proc(ctx: ^SpellContext) {\n"
+            }
+            append(&ctx.output, begin_text)
+
+            append(&ctx.output, `    incantator := ctx.caster
+    catalyst := ctx.catalyst
+    pulsus :: 1.0/60.0
+    closest_entity := ctx.closest_entity
+    entities_in_sphere := ctx.entities_in_sphere
+
+    `)
+            
+            parse_block(ctx)
+
+            append(&ctx.output, "}\n")
+
+            tok = peek(ctx)
+            if tok.kind == .T_FINIS {
+                advance(ctx)
+                break
+            }
+        } else {
+            parse_error(ctx, tok, "Catalyst rejects the symbol %.", token_to_string(tok))
+        }
     }
+}
 
-    // ctx.output.append("export on_begin :: proc(ctx: ^SpellContext) {\n")
+parse_block :: proc (ctx: ^TranspileContext) {
+    for {
+        tok := peek(ctx)
 
-    // ctx.output.append("}\n")
+        if tok.kind == .T_EOF {
+            parse_error(ctx, tok, "Catalyst rejects the incomplete scripture.")
+        }
 
-    // ctx.output.append("export on_casting :: proc(ctx: ^SpellContext) {\n")
-    // ctx.output.append("}\n")
-
-    // ctx.output.append("export on_complete :: proc(ctx: ^SpellContext) {\n")
-    // ctx.output.append("}\n")
-
+        if tok.kind == .T_FINIS {
+            break
+        } else {
+            advance(ctx)
+            append(&ctx.output, tok.lexeme)
+            if (tok.flags & .F_NEWLINE) != .F_NONE {
+                append(&ctx.output, "\n    ")
+            } else if .F_NONE != (tok.flags & .F_SPACE) {
+                append(&ctx.output, " ")
+            }
+        }
+    }
 }
 
 compile_odin :: proc(src_path: string, dst_path: string) -> bool {

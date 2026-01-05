@@ -12,6 +12,8 @@ pkgs.mkShell rec {
     # pkgs.assimp
   ];
 
+  # @TODO DO NOT HARDCODE PATH LIKE THIS!
+  shellHook = "export PATH=$PATH:/home/emarioo/dev/vendor/odin";
   # nativeBuildInputs = [ pkgs.cmake ];
 
 #    shellHook = ''
