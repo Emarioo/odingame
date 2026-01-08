@@ -15,6 +15,7 @@ ols.json
 *.bin
 *.exe
 *.lib
+*.ilk
 *.exp
 *.a
 *.pdb

@@ -1,6 +1,7 @@
 package game
 
 import "magic"
+import "core:fmt"
 import "core:math"
 import "core:math/linalg/glsl"
 
@@ -18,14 +19,18 @@ update_init :: proc (state: ^GameState) {
 }
 
 apply_force :: proc (state: ^GameState) {
-    speed: f32 = 3
+    speed: f32 = 0.05
     render := &state.render_state
 
     if render.move[ActionEvent.MOVE_SPRINT] {
-        speed *= 3.0
+        speed *= 2
     }
 
     player := get_entity(state, state.player_index)
+
+
+    // Apply friction
+    player.vel *= 0.85
 
     // look_mat := glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) *
     //             glsl.mat4Rotate(vec3{1,0,0}, render.camera_rotation.x)
@@ -45,7 +50,7 @@ apply_force :: proc (state: ^GameState) {
     }
     if render.move[ActionEvent.MOVE_RIGHT] {
         // right
-        force += -right_vector 
+        force += right_vector 
     }
     if render.move[ActionEvent.MOVE_BACKWARD] {
         // back
@@ -53,7 +58,7 @@ apply_force :: proc (state: ^GameState) {
     }
     if render.move[ActionEvent.MOVE_LEFT] {
         // left
-        force += right_vector 
+        force += -right_vector 
     }
     if render.move[ActionEvent.MOVE_UP] {
         // up
@@ -65,48 +70,50 @@ apply_force :: proc (state: ^GameState) {
     }
     player.force += force * speed
 
+    state.render_state.camera_position += force * speed * state.fixedDelta
+
     // Put events into recorder
     // only care about event changes. Key started or stopped being pressed.
 
     
-    tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
-    for i in 0..<len(render.move) {
-        if render.prev_move[i] != render.move[i] {
-            append(&tick_record.actions, Action{})
-            action := &tick_record.actions[len(tick_record.actions)-1]
-            action.kind = cast(i32)i
-            action.state = cast(i32)render.move[i]
-        }
-    }
+    // tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
+    // for i in 0..<len(render.move) {
+    //     if render.prev_move[i] != render.move[i] {
+    //         append(&tick_record.actions, Action{})
+    //         action := &tick_record.actions[len(tick_record.actions)-1]
+    //         action.kind = cast(i32)i
+    //         action.state = cast(i32)render.move[i]
+    //     }
+    // }
 }
 
 update_state :: proc (state: ^GameState) {
-    if len(state.recording.tick_records) > 0 {
-        // If previous tick had
-        tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
-        if len(tick_record.actions) > 0 {
-            append(&state.recording.tick_records, TickRecord{})
-        }
-    } else {
-        append(&state.recording.tick_records, TickRecord{})
-    }
-    tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
-    tick_record.frame = state.current_tick
+    // if len(state.recording.tick_records) > 0 {
+    //     // If previous tick had
+    //     tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
+    //     if len(tick_record.actions) > 0 {
+    //         append(&state.recording.tick_records, TickRecord{})
+    //     }
+    // } else {
+    //     append(&state.recording.tick_records, TickRecord{})
+    // }
+    // tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
+    // tick_record.frame = state.current_tick
 
     // apply player force
     apply_force(state)
 
     // update positions
 
-    for i in 0..<len(state.entities) {
+    for i in 0..<state.entities_count {
         ent := &state.entities[i]
         
+        // fmt.printfln("force %v %v %v", ent.force.x, ent.force.y, ent.force.z)
+
         // @TODO SIMD
         ent.vel += ent.force
-        ent.pos += ent.vel * state.delta
-        ent.force = 0
-    }
+        ent.pos += ent.vel * state.fixedDelta
+        ent.force = {0,0,0}
 
-    player := get_entity(state, state.player_index)
-    state.render_state.camera_position = player.pos
+    }
 }

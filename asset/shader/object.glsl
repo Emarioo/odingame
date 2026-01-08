@@ -3,13 +3,13 @@
 
 layout (location = 0) in vec3 vPos;
 layout (location = 1) in vec3 vNormal;
-layout (location = 2) in vec3 vTexture;
+layout (location = 2) in vec2 vTexcoord;
 
 
 out vec3 fPos;
-flat out vec3 fNormal;
-out vec2 fUV;
-flat out int fMaterial;
+out vec3 fNormal;
+out vec2 fTexcoord;
+// flat out int fMaterial;
 
 out vec4 fPosLightSpace;
 
@@ -28,8 +28,8 @@ void main()
 	// fNormal = fPos-vec3(transform * vec4(vPos-vNormal, 1));
 	fNormal = vNormal;
 
-	fUV = vTexture.xy;
-	fMaterial = int(vTexture.z);
+	fTexcoord = vTexcoord;
+	// fMaterial = int(vTexture.z);
 	fPosLightSpace = uLightSpaceMatrix * vec4(fPos, 1);
 
 	//fNormal = mat3(transpose(inverse(transform)))*vNormal; // Do this on the cpu and pass into the shader via uniform, per vertex. if needed...
@@ -44,6 +44,8 @@ out vec4 FragColor;
 const int N_POINTLIGHTS = 4;
 const int N_SPOTLIGHTS = 4;
 const int N_MATERIALS = 8;
+
+uniform sampler2D diffuse_map;
 
 struct Material {
 	int useMap;
@@ -91,8 +93,8 @@ uniform Material uMaterials[N_MATERIALS];
 uniform sampler2D shadow_map;
 
 in vec3 fPos;
-flat in vec3 fNormal;
-in vec2 fUV;
+in vec3 fNormal;
+in vec2 fTexcoord;
 flat in int fMaterial;
 in vec4 fPosLightSpace;
 
@@ -197,22 +199,23 @@ void main() {
 	
 	// float shadow = ShadowCalculation(fPosLightSpace);
 
-	vec3 result = vec3(0);
-	if(uLightCount.x==1)
-		result += CalcDirLight(uDirLight, normal, viewDir, 0);
-	for (int i = 0; i < uLightCount.y;i++) {
-		result += CalcPointLight(uPointLights[i], normal, fPos, viewDir, 0);
-	}
-	for (int i = 0; i < uLightCount.z; i++) {
-		result += CalcSpotLight(uSpotLights[i], normal, fPos, viewDir, 0);
-	}
+	// vec3 result = vec3(0.5,0.5,0.5);
+	vec3 result = vec3(1);
+	// if(uLightCount.x==1)
+	// 	result += CalcDirLight(uDirLight, normal, viewDir, 0);
+	// for (int i = 0; i < uLightCount.y;i++) {
+	// 	result += CalcPointLight(uPointLights[i], normal, fPos, viewDir, 0);
+	// }
+	// for (int i = 0; i < uLightCount.z; i++) {
+	// 	result += CalcSpotLight(uSpotLights[i], normal, fPos, viewDir, 0);
+	// }
 
-	//texture(uMaterials[fMaterial].diffuse_map, fUV).rgb * 
+	result *= texture(diffuse_map, fTexcoord).rgb;
 	
-	result *= uMaterials[fMaterial].diffuse_color;
-	if(uMaterials[fMaterial].useMap==1){
-		result *= texture(uMaterials[fMaterial].diffuse_map, fUV).rgb;
-	}
+	// result *= uMaterials[fMaterial].diffuse_color;
+	// if(uMaterials[fMaterial].useMap==1){
+	// 	result *= texture(uMaterials[fMaterial].diffuse_map, fUV).rgb;
+	// }
 	FragColor = vec4(result, 1);
 
     // FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);

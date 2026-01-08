@@ -3,17 +3,21 @@ package game
 import "core:fmt"
 import "core:strings"
 import "core:os"
-import "vendor:glfw"
-import gl "vendor:OpenGL"
-import ai "lib:assimp"
 import "core:path/filepath"
 import "core:slice"
 import "core:math/linalg/glsl"
 import "core:math"
 import "core:c"
 import "base:runtime"
+import "core:time"
 
+import "vendor:glfw"
+import stb_image "vendor:stb/image"
+import gl "vendor:OpenGL"
+
+vec2 :: glsl.vec2
 vec3 :: glsl.vec3
+vec4 :: glsl.vec4
 mat4 :: glsl.mat4
 
 ActionEvent :: enum {
@@ -42,12 +46,15 @@ RenderState :: struct {
     projection : mat4,
 
     block_model : Model,
+    char_model : Model,
+    texture: Texture,
 
     mx, my : i32,
     last_mx, last_my : i32,
 
     prev_move: [ActionEvent.MOVE_MAX]bool, // move in previous tick
-    move: [ActionEvent.MOVE_MAX]bool,
+    temp_move: [ActionEvent.MOVE_MAX]bool, // current move being modified by Key callbackthis tick
+    move: [ActionEvent.MOVE_MAX]bool,      // current for 
 
     cursor_locked : bool,
 
@@ -92,14 +99,22 @@ init_render_state :: proc (state: ^GameState) {
 
     render.ui_shader = load_shader(ui_path)
     render.object_shader = load_shader(object_path)
-
+    
+    
     fmt.println("(loaded shaders)")
-
+    
     render.mesh_rect = create_rect()
-
-    block_path := "asset/models/block.glb"
+    
+    // block_path := "asset/models/block.glb"
     // block_path := "asset/models/cube.glb"
-    render.block_model = load_model(block_path)
+    // render.block_model = load_model(block_path)
+    
+    char_path := "C:/Users/emarioo/Downloads/尤诺/character_trim.glb"
+    render.char_model = load_model(char_path)
+    
+    render.texture = load_texture("C:/Users/emarioo/Downloads/尤诺/textures/Face_D.png")
+    // render.texture = render.char_model.meshes[0].material.base_texture
+    
     fmt.println("(loaded models)")
 
     global_render_state = render
@@ -109,6 +124,13 @@ init_render_state :: proc (state: ^GameState) {
 Shader :: struct {
     program: u32,
     uniforms: gl.Uniforms,
+}
+
+Texture :: struct {
+    id: u32,
+    width: u32,
+    height: u32,
+
 }
 
 global_render_state : ^RenderState
@@ -131,26 +153,28 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     }
 
     if key == glfw.KEY_W {
-        global_render_state.move[ActionEvent.MOVE_FORWARD] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_FORWARD] = action != glfw.RELEASE
     }
     if key == glfw.KEY_A {
-        global_render_state.move[ActionEvent.MOVE_LEFT] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_LEFT] = action != glfw.RELEASE
     }
     if key == glfw.KEY_S {
-        global_render_state.move[ActionEvent.MOVE_BACKWARD] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_BACKWARD] = action != glfw.RELEASE
     }
     if key == glfw.KEY_D {
-        global_render_state.move[ActionEvent.MOVE_RIGHT] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_RIGHT] = action != glfw.RELEASE
     }
     if key == glfw.KEY_SPACE {
-        global_render_state.move[ActionEvent.MOVE_UP] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_UP] = action != glfw.RELEASE
     }
     if key == glfw.KEY_LEFT_CONTROL {
-        global_render_state.move[ActionEvent.MOVE_DOWN] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_DOWN] = action != glfw.RELEASE
     }
     if key == glfw.KEY_LEFT_SHIFT {
-        global_render_state.move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
+        global_render_state.temp_move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
     }
+
+    // fmt.printfln("move %v",global_render_state.move)
 
     // fmt.println("key",key,scancode,action,mods)
 }
@@ -208,18 +232,52 @@ load_shader :: proc (path : string) -> (shader: Shader) {
     return
 }
 
-Model :: struct {
-    scene : ^ai.aiScene,
-    mesh : Mesh,
+load_texture :: proc {
+    load_texture_from_file,
+    load_texture_from_buffer,
 }
 
-Material :: struct {
-    diffuse : vec3,
-    specular : vec3,
+load_texture_from_file :: proc (path: string) -> (texture: Texture) {
+    bytes, ok := os.read_entire_file(path)
+    if !ok {
+        fmt.eprintln("Could not open",path)
+        os.exit(1)
+    }
+
+    texture = load_texture_from_buffer(bytes)
+
+    fmt.printf("Loaded texture '%s'\n", path)
+
+    return
+}
+load_texture_from_buffer :: proc (data: []u8) -> (texture: Texture) {
+
+    stb_image.set_flip_vertically_on_load(1)
+
+    width, height, channels: i32
+    buffer := stb_image.load_from_memory(raw_data(data), cast(i32)len(data), &width, &height, &channels, 4)
+    // @TODO Memory leak
+
+    texture.width = cast(u32)width
+    texture.height = cast(u32)height
+
+    gl.GenTextures(1, &texture.id)
+    gl.BindTexture(gl.TEXTURE_2D, texture.id)
+
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
+    // gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, buffer)
+
+    gl.BindTexture(gl.TEXTURE_2D, 0)
+
+    return
 }
 
 update_projection :: proc (render : ^RenderState) {
-    projection := glsl.mat4Perspective( 90.0/(180/math.PI), cast(f32)render.width/cast(f32)render.height, 0.1, 400)
+    projection := glsl.mat4Perspective( 90.0/(180/math.PI), cast(f32)render.width/cast(f32)render.height, 0.02, 400)
     model_view := glsl.inverse_mat4(
         glsl.mat4Translate(render.camera_position) * 
         glsl.mat4Rotate(vec3{0,1,0}, render.camera_rotation.y) * 
@@ -264,67 +322,9 @@ update_camera :: proc (render : ^RenderState) {
     // we aren't in "focused" mode
     render.last_mx = render.mx
     render.last_my = render.my
+
 }
 
-load_model :: proc (path : string) -> (model: Model) {
-    
-    model.scene = ai.aiImportFile(strings.unsafe_string_to_cstring(path), cast(u32)ai.aiPostProcessSteps.aiProcess_MakeLeftHanded |
-        cast(u32)ai.aiPostProcessSteps.aiProcess_Triangulate
-    )
-
-    if model.scene == nil {
-        fmt.eprintln("Could not load",path, ", error:",ai.aiGetErrorString());
-        os.exit(1)
-    }
-
-    assert(1 <= model.scene.mRootNode.mNumMeshes)
-    
-    mesh_index := model.scene.mRootNode.mMeshes[0]
-
-    assert(mesh_index < model.scene.mNumMeshes)
-    mesh : ^ai.aiMesh = model.scene.mMeshes[mesh_index]
-
-    Vertex :: struct {
-        // See object.glsl shader
-        pos : vec3,
-        normal : vec3,
-        texture : vec3,
-    }   
-
-    vertices := make([]Vertex, mesh.mNumVertices * size_of(Vertex) / size_of(f32))
-    indices  := make([]u32, mesh.mNumFaces * 3)
-
-    for i in 0..<mesh.mNumVertices {
-        vertices[i].pos = mesh.mVertices[i]
-    }
-    if mesh.mNormals != nil {
-        for i in 0..<mesh.mNumVertices {
-            vertices[i].normal = mesh.mNormals[i]
-        }
-    }
-    if mesh.mTextureCoords[0] != nil {
-        assert(mesh.mNumUVComponents[0] == 2)
-        for i in 0..<mesh.mNumVertices {
-            vertices[i].texture.xy = mesh.mTextureCoords[0][i].xy
-            vertices[i].texture.z = 0.0 // local material index (used in shader, uMaterials[0])
-        }
-    }
-
-    for i in 0..<mesh.mNumFaces {
-        // Seems like assimp and opengl has different
-        // order for which is the front of the face (clockwise vs counter clockwise)
-        indices[3*i + 0] = mesh.mFaces[i].mIndices[2]
-        indices[3*i + 1] = mesh.mFaces[i].mIndices[1]
-        indices[3*i + 2] = mesh.mFaces[i].mIndices[0]
-    }
-
-    f32_vertices := slice.from_ptr(cast(^f32) slice.first_ptr(vertices), len(vertices) * size_of(Vertex) / size_of(f32))
-    model.mesh = create_mesh(f32_vertices, indices)
-
-    fmt.printf("Loaded model '%s'\n", path)
-
-    return
-}
 
 render_state :: proc (state: ^GameState) {
     render := &state.render_state
@@ -350,26 +350,31 @@ render_state :: proc (state: ^GameState) {
 
     // cull face
     // depth alpha
-    // gl.Disable(gl.CULL_FACE)
-    gl.Enable(gl.CULL_FACE)
+    gl.Disable(gl.CULL_FACE)
+    // gl.Enable(gl.CULL_FACE)
     gl.Enable(gl.DEPTH_TEST)
 
 
-    
-
-    render_rect(state, 0, 0, 100, 100, {1, 0.2, 0.2, 1})
+    diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
+    // render_rect(state, 900 + math.cos(4*diff) * 400, 1000 + math.sin(4*diff) * 400, 100, 100, {1, 0.2, 0.2, 1})
+    // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
+    // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
+    color: vec4 = {1, 1, 1, 1}
+    // color: vec4 = {1, 0.2, 0.2, 1}
+    render_rect(state, 50, 0, 100, 100, color)
 
     // render_model(state, render.block_model, Vector3f32{ 3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
-    render_model(state, render.block_model, vec3{ 0, 0, -3 })
+    // render_model(state, render.block_model, vec3{ 0, 0, -3 })
+    render_model(state, render.char_model, vec3{ 0, -1, -1 })
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
     // render entities
-    for i in 0..<len(state.entities) {
+    // for i in 0..<state.entities_count {
         
-    }
+    // }
 
     
     glfw.SwapBuffers(render.window)
@@ -386,54 +391,60 @@ render_model :: proc (state: ^GameState, model: Model, pos: vec3) {
     gl.Uniform3f(render.object_shader.uniforms["uCameraPos"].location,
         render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
-    mesh := model.scene.mMeshes[0]
-    material := model.scene.mMaterials[mesh.mMaterialIndex]
+    // mesh := model.scene.mMeshes[0]
+    // material := model.scene.mMaterials[mesh.mMaterialIndex]
     // gl.UniformMatrix4fv(render.object_shader.uniforms["uMaterials"].location, )
     // gl.UniformMatrix4fv(render.object_shader.uniforms["uLightSpaceMatrix"].location, )
 
-    max: u32 = 4
-    color: ai.aiColor4D
-    ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_DIFFUSE, 0, 0, transmute([^]f32)&color, &max)
-    if max != 4 {
-        color.a = 1.0
-    }
-    gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].diffuse_color"].location, 1, transmute([^]f32)&color)
+    // max: u32 = 4
+    // color: ai.aiColor4D
+    // ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_DIFFUSE, 0, 0, transmute([^]f32)&color, &max)
+    // if max != 4 {
+    //     color.a = 1.0
+    // }
+    // gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].diffuse_color"].location, 1, transmute([^]f32)&color)
 
-    max = 4
-    ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_SPECULAR, 0, 0, transmute([^]f32)&color, &max)
-    if max != 4 {
-        color.a = 1.0
-    }
-    gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].specular"].location, 1, transmute([^]f32)&color)
+    // max = 4
+    // ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_SPECULAR, 0, 0, transmute([^]f32)&color, &max)
+    // if max != 4 {
+    //     color.a = 1.0
+    // }
+    // gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].specular"].location, 1, transmute([^]f32)&color)
 
-    max = 1
-    shiny: f32
-    ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_SHININESS, 0, 0, transmute([^]f32)&shiny, &max)
-    gl.Uniform1f(render.object_shader.uniforms["uMaterials[0].shininess"].location, shiny)
+    // max = 1
+    // shiny: f32
+    // ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_SHININESS, 0, 0, transmute([^]f32)&shiny, &max)
+    // gl.Uniform1f(render.object_shader.uniforms["uMaterials[0].shininess"].location, shiny)
 
 
-    gl.Uniform3i(render.object_shader.uniforms["uLightCount"].location, 1, 0, 0)
+    // gl.Uniform3i(render.object_shader.uniforms["uLightCount"].location, 1, 0, 0)
     
-    dir_light := glsl.normalize_vec3(vec3{0.1, -1, 0.2})
-    dir_ambient := glsl.normalize_vec3(vec3{0.2, 0.2, 0.2})
-    dir_diffuse := glsl.normalize_vec3(vec3{0.8, 0.8, 0.2})
-    dir_specular := glsl.normalize_vec3(vec3{1.0, 1.0, 0.8})
-    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.direction"].location, 1, transmute([^]f32)&dir_light)
-    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.ambient"].location, 1, transmute([^]f32)&dir_ambient)
-    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.diffuse"].location, 1, transmute([^]f32)&dir_diffuse)
-    gl.Uniform3fv(render.object_shader.uniforms["uDirLight.specular"].location, 1, transmute([^]f32)&dir_specular)
+    // dir_light := glsl.normalize_vec3(vec3{0.1, -1, 0.2})
+    // dir_ambient := glsl.normalize_vec3(vec3{0.2, 0.2, 0.2})
+    // dir_diffuse := glsl.normalize_vec3(vec3{0.8, 0.8, 0.2})
+    // dir_specular := glsl.normalize_vec3(vec3{1.0, 1.0, 0.8})
+    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.direction"].location, 1, transmute([^]f32)&dir_light)
+    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.ambient"].location, 1, transmute([^]f32)&dir_ambient)
+    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.diffuse"].location, 1, transmute([^]f32)&dir_diffuse)
+    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.specular"].location, 1, transmute([^]f32)&dir_specular)
 
+    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.specular"].location, 1, transmute([^]f32)&dir_specular)
+    
+    
     // gl.UniformMatrix4fv(render.object_shader.uniforms["uSpotLights"].location, )
     // gl.UniformMatrix4fv(render.object_shader.uniforms["uPointLights"].location, )
     // gl.UniformMatrix4fv(render.object_shader.uniforms["shadow_map"].location, )
+    
+    for i in 0..<len(model.meshes) {
+        mesh := &model.meshes[i]
+        
+        gl.ActiveTexture(gl.TEXTURE0)
+        gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
 
-    gl.BindVertexArray(model.mesh.vao)
-    gl.DrawElements(gl.TRIANGLES, model.mesh.index_count, gl.UNSIGNED_INT, nil)
-}
-
-Mesh :: struct {
-    vao, vbo, ibo: u32,
-    index_count: i32,
+        gl.Uniform1i(render.object_shader.uniforms["diffuse_map"].location, 0)
+        gl.BindVertexArray(mesh.vao)
+        gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
+    }
 }
 
 
@@ -445,12 +456,17 @@ render_rect :: proc (state: ^GameState, x,y,w,h: f32, color: [4]f32) {
     gl.Uniform2f(render.ui_shader.uniforms["uPos"].location, x, y)
     gl.Uniform2f(render.ui_shader.uniforms["uSize"].location, w, h)
     gl.Uniform4f(render.ui_shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
+    gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
+
+    gl.ActiveTexture(gl.TEXTURE0)
+    gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
 
     gl.BindVertexArray(render.mesh_rect.vao)
     gl.DrawArrays(gl.TRIANGLES, 0, 6)
 }
 
-create_mesh :: proc (vertex_data: []f32, index_data: []u32) -> (mesh: Mesh) {
+create_mesh :: proc (vertex_data: []f32, index_data: []u32, material: Material) -> (mesh: Mesh) {
+    mesh.material = material
 
     gl.GenVertexArrays(1, &mesh.vao)
     gl.GenBuffers     (1, &mesh.vbo)
@@ -465,15 +481,15 @@ create_mesh :: proc (vertex_data: []f32, index_data: []u32) -> (mesh: Mesh) {
     gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(index_data) * size_of(u32), raw_data(index_data), gl.STATIC_DRAW)
 
     // position attribute
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 9, cast(uintptr)0)
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)0)
 	gl.EnableVertexAttribArray(0)
 
     // normal attribyte
-    gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 9, cast(uintptr)(3*size_of(f32)))
+    gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(3*size_of(f32)))
 	gl.EnableVertexAttribArray(1)
         
     // texture coordinate attribute
-	gl.VertexAttribPointer(2, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 9, cast(uintptr)(6*size_of(f32)))
+	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(6*size_of(f32)))
 	gl.EnableVertexAttribArray(2)
 
     gl.BindVertexArray(0)
@@ -499,9 +515,9 @@ create_rect :: proc () -> (mesh: Mesh) {
     //     1, 3, 2,
     // }
 
-    for i in 0..<len(vertex_data) {
-        vertex_data[i]/=2.0
-    }
+    // for i in 0..<len(vertex_data) {
+    //     vertex_data[i]/=2.0
+    // }
 
     gl.GenVertexArrays(1, &mesh.vao)
     gl.GenBuffers     (1, &mesh.vbo)

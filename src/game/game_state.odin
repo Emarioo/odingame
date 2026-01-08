@@ -13,9 +13,12 @@ GameState :: struct {
     entities:       [MAX_ENTITIES]Entity,
     entities_count: u32,
 
+    startTime:    time.Time,
     lastTime:     time.Time,
-    accDeltaTime: f64,
+    accDeltaTime: f32,
     delta:        f32,
+    fixedDelta:   f32,
+
 
     player_index: u32,
 
