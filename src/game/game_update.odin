@@ -4,6 +4,7 @@ import "magic"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg/glsl"
+import "../util"
 
 update_init :: proc (state: ^GameState) {
 
@@ -16,6 +17,12 @@ update_init :: proc (state: ^GameState) {
     `
 
     magic.transpile_spell(text)
+
+    
+
+    art_path := "art"
+
+    util.watcher_init(&state.art_watcher, "art")
 }
 
 apply_force :: proc (state: ^GameState) {
@@ -86,6 +93,8 @@ apply_force :: proc (state: ^GameState) {
     //     }
     // }
 }
+
+
 
 update_state :: proc (state: ^GameState) {
     // if len(state.recording.tick_records) > 0 {

@@ -4,6 +4,8 @@ import "core:time"
 // import "core:math"
 // import "core:math/linalg"
 
+import "../util"
+
 MAX_ENTITIES :: 1024
 
 FIXED_UPDATE_DELTA :: 1.0/60.0
@@ -26,8 +28,14 @@ GameState :: struct {
 
     render_state: RenderState,
     recording: Recording,
+    storage: AssetStorage,
 
     running: bool,
+
+    scheduled_assets: [dynamic]^Asset,
+
+    art_watcher: util.Watcher
+
 }
 
 Entity :: struct {

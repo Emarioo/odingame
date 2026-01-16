@@ -23,3 +23,9 @@ ols.json
 
 # Game related
 spells
+
+# models I don't own
+art/vendor
+
+# exported from from blender files
+assets/models

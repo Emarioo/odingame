@@ -95,77 +95,77 @@ def has_assimp():
 
 
 
-def build_cgltf():
-    OS = platform.system().lower()
-    ROOT = os.path.dirname(__file__)
-    LIB_DIR = f"{ROOT}/lib/cgltf/{OS}/shared"
-    os.makedirs(f"{LIB_DIR}", exist_ok=True)
-    # run(f"gcc -shared -o {LIB_DIR}/shared/libcgltf.so src/cgltf/cgltf.c {FLAGS}")
-    # run(f"gcc -shared -o {LIB_DIR}/shared/cgltf.dll src/cgltf/cgltf.c {FLAGS}")
-    run(f"cl /DEBUG /TC /Zi src/cgltf/cgltf.c /I src /link /DLL /PDBALTPATH:cgltf.pdb /DEBUG /OUT:{LIB_DIR}/cgltf.dll")
-    print("built cgltf")
+# def build_cgltf():
+#     OS = platform.system().lower()
+#     ROOT = os.path.dirname(__file__)
+#     LIB_DIR = f"{ROOT}/lib/cgltf/{OS}/shared"
+#     os.makedirs(f"{LIB_DIR}", exist_ok=True)
+#     # run(f"gcc -shared -o {LIB_DIR}/shared/libcgltf.so src/cgltf/cgltf.c {FLAGS}")
+#     # run(f"gcc -shared -o {LIB_DIR}/shared/cgltf.dll src/cgltf/cgltf.c {FLAGS}")
+#     run(f"cl /DEBUG /TC /Zi src/cgltf/cgltf.c /I src /link /DLL /PDBALTPATH:cgltf.pdb /DEBUG /OUT:{LIB_DIR}/cgltf.dll")
+#     print("built cgltf")
 
 
-def build_assimp():
-    ROOT = os.path.dirname(__file__)
-    os.chdir(ROOT)
+# def build_assimp():
+#     ROOT = os.path.dirname(__file__)
+#     os.chdir(ROOT)
 
-    os.makedirs("extern", exist_ok=True)
-    os.chdir("extern")
+#     os.makedirs("extern", exist_ok=True)
+#     os.chdir("extern")
 
-    if not os.path.exists("assimp"):
-        run("git clone --depth 1 --branch v6.0.2 https://github.com/assimp/assimp")
-    else:
-        # if we have the extern/assimp directory we assume it's been cloned properly
-        pass
+#     if not os.path.exists("assimp"):
+#         run("git clone --depth 1 --branch v6.0.2 https://github.com/assimp/assimp")
+#     else:
+#         # if we have the extern/assimp directory we assume it's been cloned properly
+#         pass
 
-    os.chdir("assimp")
-    OS = platform.system().lower()
-    LIB_DIR = f"{ROOT}/lib/assimp/{OS}"
-    os.makedirs(f"{LIB_DIR}", exist_ok=True)
-    if platform.system() == "Windows":
-        os.makedirs(f"{LIB_DIR}/static", exist_ok=True)
-        os.makedirs(f"{LIB_DIR}/shared", exist_ok=True)
+#     os.chdir("assimp")
+#     OS = platform.system().lower()
+#     LIB_DIR = f"{ROOT}/lib/assimp/{OS}"
+#     os.makedirs(f"{LIB_DIR}", exist_ok=True)
+#     if platform.system() == "Windows":
+#         os.makedirs(f"{LIB_DIR}/static", exist_ok=True)
+#         os.makedirs(f"{LIB_DIR}/shared", exist_ok=True)
 
-    os.makedirs("build", exist_ok=True)
+#     os.makedirs("build", exist_ok=True)
 
-    run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=ON -DASSIMP_BUILD_ZLIB=ON -DASSIMP_BUILD_TESTS=OFF")
-    run("cmake --build . --parallel 16")
+#     run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=ON -DASSIMP_BUILD_ZLIB=ON -DASSIMP_BUILD_TESTS=OFF")
+#     run("cmake --build . --parallel 16")
 
-    # # Windows has shared and static sub dirs to keep the dll .pdb and lib .pdb separate (since we can't rename them)
+#     # # Windows has shared and static sub dirs to keep the dll .pdb and lib .pdb separate (since we can't rename them)
 
-    if platform.system() == "Windows":
-        print(os.getcwd())
-        for dll in glob.glob("bin/*/assimp*.dll"):
-            shutil.copy(dll, f"{LIB_DIR}/shared/{os.path.basename(dll)}")
-            break
-        for dll in glob.glob("bin/*/assimp*.pdb"):
-            shutil.copy(dll, f"{LIB_DIR}/shared/{os.path.basename(dll)}")
-            break
-        for dll in glob.glob("lib/*/assimp*.lib"):
-            shutil.copy(dll, f"{LIB_DIR}/shared/{os.path.basename(dll)}".replace(".lib","dll.lib"))
-            break
-    else:
-        for dll in glob.glob("bin/libassimp*.so"):
-            shutil.copy(dll, f"{ROOT}/lib/assimp/{OS}/libassimp.so")
-            break
+#     if platform.system() == "Windows":
+#         print(os.getcwd())
+#         for dll in glob.glob("bin/*/assimp*.dll"):
+#             shutil.copy(dll, f"{LIB_DIR}/shared/{os.path.basename(dll)}")
+#             break
+#         for dll in glob.glob("bin/*/assimp*.pdb"):
+#             shutil.copy(dll, f"{LIB_DIR}/shared/{os.path.basename(dll)}")
+#             break
+#         for dll in glob.glob("lib/*/assimp*.lib"):
+#             shutil.copy(dll, f"{LIB_DIR}/shared/{os.path.basename(dll)}".replace(".lib","dll.lib"))
+#             break
+#     else:
+#         for dll in glob.glob("bin/libassimp*.so"):
+#             shutil.copy(dll, f"{ROOT}/lib/assimp/{OS}/libassimp.so")
+#             break
 
-    # run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_ZLIB=ON -DASSIMP_BUILD_TESTS=OFF")
-    # run("cmake --build . --parallel 16")
+#     # run("cmake CMakeLists.txt -DBUILD_SHARED_LIBS=OFF -DASSIMP_BUILD_ZLIB=ON -DASSIMP_BUILD_TESTS=OFF")
+#     # run("cmake --build . --parallel 16")
     
-    # if platform.system() == "Windows":
-    #     for dll in glob.glob("lib/*/assimp*.lib"):
-    #         shutil.copy(dll, f"{LIB_DIR}/static/{os.path.basename(dll)}")
-    #         break
-    #     for dll in glob.glob("lib/*/assimp*.pdb"):
-    #         shutil.copy(dll, f"{LIB_DIR}/static/{os.path.basename(dll)}")
-    #         break
-    # else:
-    #     for dll in glob.glob("lib/libassimp*.a"):
-    #         shutil.copy(dll, f"{LIB_DIR}/libassimp.a")
-    #         break
+#     # if platform.system() == "Windows":
+#     #     for dll in glob.glob("lib/*/assimp*.lib"):
+#     #         shutil.copy(dll, f"{LIB_DIR}/static/{os.path.basename(dll)}")
+#     #         break
+#     #     for dll in glob.glob("lib/*/assimp*.pdb"):
+#     #         shutil.copy(dll, f"{LIB_DIR}/static/{os.path.basename(dll)}")
+#     #         break
+#     # else:
+#     #     for dll in glob.glob("lib/libassimp*.a"):
+#     #         shutil.copy(dll, f"{LIB_DIR}/libassimp.a")
+#     #         break
 
-    os.chdir(ROOT)
+#     os.chdir(ROOT)
 
 def run(cmd):
     # print(cmd)

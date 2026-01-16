@@ -67,7 +67,27 @@ override_file_release :: proc "c" (memory_options: ^cgltf.memory_options, file_o
 }
 
 
-load_model :: proc (path : string) -> (model: Model) {
+cleanup_model :: proc (model: ^Model) {
+    cgltf.free(model.raw_data)
+    model.raw_data = nil
+
+    for m in model.meshes {
+        gl.DeleteVertexArrays(1, &mesh.vao)
+        gl.DeleteBuffers     (1, &mesh.vbo)
+        gl.DeleteBuffers     (1, &mesh.ibo)
+
+        gl.DeleteTextures(1, &mesh.material.texture)
+
+        free(mesh.vertices)
+        free(mesh.indices)
+    }
+    clear(&model.meshes)
+}
+
+
+load_model :: proc (path : string, model: ^Model) {
+    // assumes model is clean and zeroed.
+
     cpath := strings.unsafe_string_to_cstring(path)
     options: cgltf.options
     c: runtime.Context = context
@@ -119,7 +139,7 @@ load_model :: proc (path : string) -> (model: Model) {
         if primitive.material.has_pbr_metallic_roughness {
             index := 2 + primitive.material.pbr_metallic_roughness.base_color_texture.texcoord
             assert(primitive.attributes[index].type == cgltf.attribute_type.texcoord)
-            fmt.printfln("tex %v %v", primitive.material.name, primitive.material.pbr_metallic_roughness.base_color_texture.texcoord)
+            // fmt.printfln("tex %v %v", primitive.material.name, primitive.material.pbr_metallic_roughness.base_color_texture.texcoord)
             texcoord_acc = primitive.attributes[index].data
         }
         
@@ -141,7 +161,8 @@ load_model :: proc (path : string) -> (model: Model) {
 
         material: Material
 
-        if primitive.material.has_pbr_metallic_roughness {
+        // @TODO material depends on 
+        if primitive.material.has_pbr_metallic_roughness && primitive.material.pbr_metallic_roughness.base_color_texture.texture != nil {
             bytes := slice.from_ptr(cast(^u8)mem.ptr_offset(cast(^u8)primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.buffer.data, primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.offset), cast(int) primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.size)
             material.base_texture = load_texture(bytes)
         }

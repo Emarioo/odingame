@@ -46,7 +46,8 @@ RenderState :: struct {
     projection : mat4,
 
     block_model : Model,
-    char_model : Model,
+    // char_model : Model,
+    char_model : ^Asset,
     texture: Texture,
 
     mx, my : i32,
@@ -94,8 +95,8 @@ init_render_state :: proc (state: ^GameState) {
 
     glfw.SwapInterval(0)
 
-    ui_path := "asset/shader/ui.glsl"
-    object_path := "asset/shader/object.glsl"
+    ui_path := "assets/shaders/ui.glsl"
+    object_path := "assets/shaders/object.glsl"
 
     render.ui_shader = load_shader(ui_path)
     render.object_shader = load_shader(object_path)
@@ -105,14 +106,17 @@ init_render_state :: proc (state: ^GameState) {
     
     render.mesh_rect = create_rect()
     
-    // block_path := "asset/models/block.glb"
-    // block_path := "asset/models/cube.glb"
+    // block_path := "assets/models/block.glb"
+    // block_path := "assets/models/cube.glb"
     // render.block_model = load_model(block_path)
+
     
-    char_path := "C:/Users/emarioo/Downloads/尤诺/character_trim.glb"
-    render.char_model = load_model(char_path)
+    // register_asset(&state.storage, "iuno", "art/vendor/尤诺/character_trim.blend")
+    // render.char_model = register_asset(state, "iuno", "art/vendor/尤诺/character_trim.glb")
+    render.char_model = register_asset(state, "block", "art/block.glb")
+
     
-    render.texture = load_texture("C:/Users/emarioo/Downloads/尤诺/textures/Face_D.png")
+    // render.texture = load_texture("C:/Users/emarioo/Downloads/尤诺/textures/Face_D.png")
     // render.texture = render.char_model.meshes[0].material.base_texture
     
     fmt.println("(loaded models)")
@@ -273,6 +277,8 @@ load_texture_from_buffer :: proc (data: []u8) -> (texture: Texture) {
 
     gl.BindTexture(gl.TEXTURE_2D, 0)
 
+    stb_image.image_free(buffer)
+
     return
 }
 
@@ -361,13 +367,13 @@ render_state :: proc (state: ^GameState) {
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
     color: vec4 = {1, 1, 1, 1}
     // color: vec4 = {1, 0.2, 0.2, 1}
-    render_rect(state, 50, 0, 100, 100, color)
+    // render_rect(state, 50, 0, 100, 100, color)
 
     // render_model(state, render.block_model, Vector3f32{ 3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
     // render_model(state, render.block_model, vec3{ 0, 0, -3 })
-    render_model(state, render.char_model, vec3{ 0, -1, -1 })
+    render_model(state, render.char_model.model, vec3{ 0, -1, -1 })
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
@@ -380,7 +386,7 @@ render_state :: proc (state: ^GameState) {
     glfw.SwapBuffers(render.window)
 }
 
-render_model :: proc (state: ^GameState, model: Model, pos: vec3) {
+render_model :: proc (state: ^GameState, model: ^Model, pos: vec3) {
     render := &state.render_state
     gl.UseProgram(render.object_shader.program)
 
@@ -458,8 +464,8 @@ render_rect :: proc (state: ^GameState, x,y,w,h: f32, color: [4]f32) {
     gl.Uniform4f(render.ui_shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
     gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
 
-    gl.ActiveTexture(gl.TEXTURE0)
-    gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
+    // gl.ActiveTexture(gl.TEXTURE0)
+    // gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
 
     gl.BindVertexArray(render.mesh_rect.vao)
     gl.DrawArrays(gl.TRIANGLES, 0, 6)
