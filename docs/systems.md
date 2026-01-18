@@ -27,3 +27,36 @@ to figure out the problem.
 # Asset system
 
 Reload on change
+
+
+
+
+
+
+
+
+
+# Driver, engine, game packages and main, render, input, worker threads
+
+The systems and packages are neatly packaged having implementation details and a clean API for us.
+
+For example.
+The driver package looks like this:
+
+
+```
+
+main :: proc () {
+    // start in main function of your executable
+
+    driver: DriverData
+
+    driver_init(&driver, )
+
+
+    driver_start(&driver)
+
+}
+
+```
+

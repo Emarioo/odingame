@@ -29,7 +29,7 @@ void main()
 {
     vec4 result = uColor;
     // vec4 result = vec4(1);
-    result *= texture(uSampler, fTexcoord);
+    // result *= texture(uSampler, fTexcoord);
     // result *= vec4(fTexcoord,0,1);
     FragColor = result;
 } 

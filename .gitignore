@@ -1,7 +1,25 @@
-# This project's intermediate files
-bin
+
+
+
+
+# models I don't own
+art/vendor
+
+# exported from from blender files
+assets/models
+
+# ignore .blend1 files
+*.blend*
+!*.blend
+
+# Builds, release and dev
+releases
+
+
 # git clones, dependencies
 extern
+
+
 
 # IDE stuff
 ols.json
@@ -9,23 +27,20 @@ ols.json
 *.code-workspace
 
 # Binaries
+int
 *.o
-*.dll
+*.a
 *.so
-*.bin
-*.exe
+*.out
+
+*.obj
 *.lib
+*.dll
+*.exe
 *.ilk
 *.exp
-*.a
 *.pdb
-*.exp
 
-# Game related
-spells
+*.log
 
-# models I don't own
-art/vendor
-
-# exported from from blender files
-assets/models
+__pycache__

@@ -9,33 +9,61 @@ package driver
 import "core:fmt"
 import "core:dynlib"
 import "core:os"
+import "core:os/os2"
 import "core:path/filepath"
 import "core:time"
+import "core:strings"
+import "core:sync"
+import "core:thread"
 
 ENABLE_HOTRELOAD :: #config(ENABLE_HOTRELOAD, true)
 
+
 main :: proc () {
     // fmt.println("Hello, sailor!")
+    ok                     : bool
     
-    exe_path       := os.args[0]
+    exe_dir, err123       := os2.get_executable_directory(context.allocator)
+    if err123 != os2.General_Error.None {
+        fmt.printfln("Could not get executable directory %v", err123)
+    }
+
+    was_allocation: bool
+    exe_dir, was_allocation = strings.replace_all(exe_dir, "\\", "/")
+
     fresh_lib_path : string 
     temp_lib_path  : string
+    temp2_lib_path  : string
     when ODIN_OS == .Linux {
-        fresh_lib_path = filepath.join([]string{ filepath.dir(exe_path), "/game.so" })
-        temp_lib_path  = filepath.join([]string{ filepath.dir(exe_path), "/_game.so"  })
+        fresh_lib_path  = filepath.join([]string{ exe_dir, "/libgame_code.so" })
+        temp_lib_path   = filepath.join([]string{ exe_dir, "/lib_game_code.so"  })
+        temp2_lib_path  = filepath.join([]string{ exe_dir, "/lib_2game_code.so"  })
+        
+        permanent_library_load("libglfw.so")
+        permanent_library_load("libGL.so")
     } else {
-        fresh_lib_path = filepath.join([]string{ filepath.dir(exe_path), "/game.dll" })
-        temp_lib_path  = filepath.join([]string{ filepath.dir(exe_path), "/_game.dll"  })
+        fresh_lib_path  = filepath.join([]string{ exe_dir, "/game_code.dll" })
+        temp_lib_path   = filepath.join([]string{ exe_dir, "/_game_code.dll"  })
+        temp2_lib_path  = filepath.join([]string{ exe_dir, "/_2game_code.dll"  })
+
+        // Load dynamic libraries game_code dll depends on so that they don't get unloaded
+        // when game code is unloaded. We could move this to engine or game code if we wish.
+        permanent_library_load("glfw3.dll")
+        permanent_library_load("OpenGL32.dll")
     }
+
 
     last_modification_time : time.Time
     last_timestamp_check   : time.Time
-    func_event             : proc(event: EventKind, data: ^EventData)
     file_info              : os.File_Info
     library                : dynlib.Library
     address                : rawptr
     error                  : os.Errno
-    ok                     : bool
+    data: DriverData
+    event_data: EventData
+    data.running = true
+    data.thread_main = thread_main
+    data.game_directory = exe_dir
 
     if ENABLE_HOTRELOAD {
         copy_file(fresh_lib_path, temp_lib_path)
@@ -53,7 +81,7 @@ main :: proc () {
             fmt.println("Could not find 'driver_event' in", temp_lib_path)
             os.exit(1)
         }
-        func_event = cast(proc(event: EventKind, data: ^EventData)) address
+        data.driver_event = cast(proc(event: EventKind, event_data: ^EventData, data: ^DriverData)) address
 
 
         file_info, error = os.stat(fresh_lib_path)
@@ -63,14 +91,26 @@ main :: proc () {
         os.file_info_delete(file_info)
     }
 
-    data: EventData
-    data.running = true
 
     // we need to load glfw3.dll and assimp.dll dynamically so they don't unload
     // when we unload the game.dll
 
-    func_event(EventKind.EVENT_LOAD, &data)
-    func_event(EventKind.EVENT_START, &data)
+    data.driver_event(EventKind.EVENT_LOAD, &event_data, &data)
+    data.driver_event(EventKind.EVENT_START, &event_data, &data)
+
+    keep_first_game_code := true
+    {
+        // Watcher (with its threads) has to be started in non-reloadable code which is the driver.
+        // Network threads will also need this.
+        // game_state := cast(^game.GameState) event_data.user_data
+        // util.watcher_init(&game_state.engine.art_watcher, "art")
+
+        // If we don't want this then one option is to keep the first game_code.dll, on reload watcher and networking threads will
+        // keep running in the old game code since it won't be unloaded and functions invalidated. For our driver event rendering, update code
+        // we call functions from the new game code.
+        // This can get a little messy and buggy at runtime bug hot reload is only for developers anyway and won't happen at runtime?
+        // With this approach we don't have to have game specific code in the driver.
+    }
 
     // TODO: What about multiple threads?
     for data.running {
@@ -86,20 +126,31 @@ main :: proc () {
                 defer os.file_info_delete(file_info)
 
                 if error == os.General_Error.None && time.time_to_unix_nano(file_info.modification_time) > time.time_to_unix_nano(last_modification_time) {
-                    // If it has been rebuilt
-                    // - Let game code know it's about to be unloaded
-                    // - Unload old library
-                    // - Load new library
-                    // - Let game code know game code was loaded again
+
+                    // Send signal to other thread saying DO NOT SEND TICK EVENT AND STALL
+                    // Wait until all threads are stalling
+
+                    sync.atomic_store(&data.reload_requested, true)
+
+                    sync.mutex_lock(&data.mutex)
+                    for sync.atomic_load(&data.parked_threads) < sync.atomic_load(&data.active_threads) {
+                        sync.cond_wait(&data.cond, &data.mutex)
+                    }
+                    sync.mutex_unlock(&data.mutex)
 
                     last_modification_time = file_info.modification_time
                     
-                    func_event(EventKind.EVENT_UNLOAD, &data)
+                    data.driver_event(EventKind.EVENT_UNLOAD, &event_data, &data)
 
-                    ok = dynlib.unload_library(library)
-                    if !ok {
-                        fmt.println("Could not unload library", temp_lib_path)
-                        os.exit(1)
+                    if !keep_first_game_code {
+                        ok = dynlib.unload_library(library)
+                        if !ok {
+                            fmt.println("Could not unload library", temp_lib_path)
+                            os.exit(1)
+                        }
+                    } else {
+                        keep_first_game_code = true
+                        temp_lib_path = temp2_lib_path
                     }
 
                     copy_file(fresh_lib_path, temp_lib_path)
@@ -115,25 +166,62 @@ main :: proc () {
                         fmt.println("Could not find 'driver_event' in", temp_lib_path)
                         os.exit(1)
                     }
-                    func_event := cast(proc(event: EventKind, data: ^EventData)) address
+                    data.driver_event = cast(proc(event: EventKind, event_data: ^EventData, data: ^DriverData)) address
 
-                    func_event(EventKind.EVENT_LOAD, &data)
+                    data.driver_event(EventKind.EVENT_LOAD, &event_data, &data)
+
+                    // Send signal to other thread saying STOP STALL, KEEP SENDING TICK EVENTS
+                    sync.atomic_store(&data.reload_requested, false)
+                    sync.cond_broadcast(&data.cond)
                 }
             }
         }
         
         // Tick update
-        func_event(EventKind.EVENT_TICK, &data)
+        data.driver_event(EventKind.EVENT_TICK, &event_data, &data)
     }
 
-    func_event(EventKind.EVENT_STOP, &data)
-    func_event(EventKind.EVENT_UNLOAD, &data)
+    data.driver_event(EventKind.EVENT_STOP, &event_data, &data)
+    data.driver_event(EventKind.EVENT_UNLOAD,&event_data, &data)
+}
+
+thread_main :: proc (thread: ^thread.Thread) {
+    data := cast(^DriverData)thread.data
+
+    event_data: EventData
+    event_data.user_index = thread.user_index
+    event_data.user_data  = data.user_data
+
+    for data.running {
+
+        // Look for STOP SENDING TICK EVENT AND STALL
+        // if this signal is active we wait here until it's not anymore
+
+        if sync.atomic_load(&data.reload_requested) {
+            sync.mutex_lock(&data.mutex)
+            sync.atomic_add(&data.parked_threads, 1)
+
+            if sync.atomic_load(&data.parked_threads) == sync.atomic_load(&data.active_threads) {
+                sync.cond_signal(&data.cond)
+            }
+
+            for sync.atomic_load(&data.reload_requested) {
+                sync.cond_wait(&data.cond, &data.mutex)
+            }
+
+            sync.atomic_sub(&data.parked_threads, 1)
+            sync.mutex_unlock(&data.mutex)
+            continue
+        }
+
+        data.driver_event(EventKind.EVENT_TICK, &event_data, data)
+    }
 }
 
 copy_file :: proc(src_path, dst_path: string) -> bool {
     src, ok := os.open(src_path, os.O_RDONLY)
     if ok != os.General_Error.None {
-        fmt.println("Failed to open source file")
+        fmt.printfln("Failed to open source file %v", src_path)
         return false
     }
     defer os.close(src)
@@ -141,7 +229,7 @@ copy_file :: proc(src_path, dst_path: string) -> bool {
     dst: os.Handle
     dst, ok = os.open(dst_path, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0o777)
     if ok != os.General_Error.None {
-        fmt.println("Failed to create destination file")
+        fmt.printfln("Failed to create destination file %v", dst_path)
         return false
     }
     defer os.close(dst)
@@ -155,7 +243,7 @@ copy_file :: proc(src_path, dst_path: string) -> bool {
 
         bytes_written, write_ok := os.write(dst, buf[:bytes_read])
         if write_ok != os.General_Error.None {
-            fmt.println("Write failed")
+            fmt.printfln("Write failed %v", dst_path)
             return false
         }
     }

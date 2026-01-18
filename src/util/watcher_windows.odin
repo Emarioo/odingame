@@ -4,6 +4,7 @@ import "core:os"
 import "core:fmt"
 import "core:time"
 import "core:slice"
+import "core:strings"
 import "core:mem"
 import "core:thread"
 import "core:sync"
@@ -119,6 +120,18 @@ _watcher_thread_main :: proc (thread: ^thread.Thread) {
                         }
                     }
                     if !skip {
+                        new_path, was_allocation := strings.replace_all(event.path, "\\", "/")
+                        if was_allocation {
+                            delete(event.path)
+                        }
+                        event.path = new_path
+                        
+                        new_path, was_allocation = strings.replace_all(event.old_path, "\\", "/")
+                        if was_allocation {
+                            delete(event.old_path)
+                        }
+                        event.old_path = new_path
+                        
                         append(events, event)
                         // @TODO Memory leak when skipping event since we allocated path
                     }

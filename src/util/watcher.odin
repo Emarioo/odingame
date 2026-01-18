@@ -76,9 +76,17 @@ watcher_poll :: proc (watcher: ^Watcher) -> []WatchEvent {
     events: ^[dynamic]WatchEvent
     if watcher.use_events_0 {
         events = &watcher.events_0
+        for i in 0..<len(watcher.events_1) {
+            delete(watcher.events_1[i].path)
+            delete(watcher.events_1[i].old_path)
+        }
         clear(&watcher.events_1)
     } else {
         events = &watcher.events_1
+        for i in 0..<len(watcher.events_0) {
+            delete(watcher.events_0[i].path)
+            delete(watcher.events_0[i].old_path)
+        }
         clear(&watcher.events_0)
     }
     watcher.use_events_0 = !watcher.use_events_0

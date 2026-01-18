@@ -1,4 +1,4 @@
-package game
+package engine
 
 import "core:fmt"
 import "core:strings"
@@ -15,10 +15,10 @@ import "vendor:glfw"
 import stb_image "vendor:stb/image"
 import gl "vendor:OpenGL"
 
-vec2 :: glsl.vec2
-vec3 :: glsl.vec3
-vec4 :: glsl.vec4
-mat4 :: glsl.mat4
+// vec2 :: glsl.vec2
+// vec3 :: glsl.vec3
+// vec4 :: glsl.vec4
+// mat4 :: glsl.mat4
 
 ActionEvent :: enum {
     MOVE_FORWARD,
@@ -35,8 +35,8 @@ RenderState :: struct {
     window: glfw.WindowHandle,
     width, height: i32,
 
-    ui_shader : Shader,
-    object_shader : Shader,
+    ui_shader : ^Asset,
+    object_shader : ^Asset,
     mesh_rect: Mesh,
     // mesh_: Mesh
 
@@ -45,11 +45,11 @@ RenderState :: struct {
 
     projection : mat4,
 
-    block_model : Model,
-    // char_model : Model,
     char_model : ^Asset,
+    block_model : ^Asset,
     texture: Texture,
 
+    first_mx : bool,
     mx, my : i32,
     last_mx, last_my : i32,
 
@@ -62,8 +62,8 @@ RenderState :: struct {
     cameraSensitivity : f32,
 }
 
-init_render_state :: proc (state: ^GameState) {
-
+render_init_window :: proc (state: ^EngineState) {
+    render := &state.render_state
     
     glfw.Init()
     
@@ -71,58 +71,51 @@ init_render_state :: proc (state: ^GameState) {
     glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
     glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE);
     
-    render := &state.render_state
-    render.cameraSensitivity = 0.4
+    render.cameraSensitivity = 0.16
     
     render.width = 800
     render.height = 600
-    render.window = glfw.CreateWindow(render.width, render.height, cstring("Game"), nil, nil)
+    window := glfw.CreateWindow(render.width, render.height, cstring("odingame"), nil, nil)
+    glfw.SetWindowUserPointer(window, state)
 
     // hyprland may change the window size even if
     // we specify 800x600 when creating window.
     // We make sure to get the real size here.
-    render.width, render.height = glfw.GetWindowSize(render.window)
+    render.width, render.height = glfw.GetWindowSize(window)
 
-    glfw.SetKeyCallback(render.window, KeyProc)
-    glfw.SetMouseButtonCallback(render.window, MouseButtonProc)
-    glfw.SetCursorPosCallback(render.window, CursorPosProc)
-    glfw.SetScrollCallback(render.window, ScrollProc)
-    glfw.SetWindowSizeCallback(render.window, WindowSizeProc)
-
-    glfw.MakeContextCurrent(render.window)
-
-    gl.load_up_to(4, 5, glfw.gl_set_proc_address);
+    set_glfw_globals(render, window)
 
     glfw.SwapInterval(0)
 
-    ui_path := "assets/shaders/ui.glsl"
-    object_path := "assets/shaders/object.glsl"
+    render.ui_shader     = register_asset_from_store(state, "ui_shader",     "assets/shaders/ui.glsl")
+    render.object_shader = register_asset_from_store(state, "object_shader", "assets/shaders/object.glsl")
+    render.block_model   = register_asset_from_store(state, "block",         "assets/models/block.glb")
+    render.char_model    = register_asset_from_store(state, "iuno",          "assets/models/character_trim.glb")
 
-    render.ui_shader = load_shader(ui_path)
-    render.object_shader = load_shader(object_path)
-    
-    
-    fmt.println("(loaded shaders)")
-    
+    // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
+    render.window = window
+}
+
+
+init_render_state :: proc (state: ^EngineState) {
+    render := &state.render_state
+
+    glfw.MakeContextCurrent(render.window)
+    set_opengl_globals()
+
+    // render.ui_shader = load_shader(ui_path)
+    // render.object_shader = load_shader(object_path)
+
     render.mesh_rect = create_rect()
-    
+
     // block_path := "assets/models/block.glb"
     // block_path := "assets/models/cube.glb"
     // render.block_model = load_model(block_path)
 
     
-    // register_asset(&state.storage, "iuno", "art/vendor/尤诺/character_trim.blend")
-    // render.char_model = register_asset(state, "iuno", "art/vendor/尤诺/character_trim.glb")
-    render.char_model = register_asset(state, "block", "art/block.glb")
-
     
     // render.texture = load_texture("C:/Users/emarioo/Downloads/尤诺/textures/Face_D.png")
     // render.texture = render.char_model.meshes[0].material.base_texture
-    
-    fmt.println("(loaded models)")
-
-    global_render_state = render
-
 }
 
 Shader :: struct {
@@ -134,48 +127,64 @@ Texture :: struct {
     id: u32,
     width: u32,
     height: u32,
-
+    raw_data: [^]u8,
 }
 
-global_render_state : ^RenderState
+set_glfw_globals :: proc (render: ^RenderState, opt_window: glfw.WindowHandle = nil) {
+    window := render.window
+    if opt_window != nil {
+        window = opt_window
+    }
+    glfw.SetKeyCallback(window, KeyProc)
+    glfw.SetMouseButtonCallback(window, MouseButtonProc)
+    glfw.SetCursorPosCallback(window, CursorPosProc)
+    glfw.SetScrollCallback(window, ScrollProc)
+    glfw.SetWindowSizeCallback(window, WindowSizeProc)
+}
+
+set_opengl_globals :: proc () {
+    gl.load_up_to(4, 5, glfw.gl_set_proc_address);
+}
 
 KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: c.int) {
     context = runtime.default_context()
-    assert(global_render_state.window == window)
-    
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
     if key == glfw.KEY_ESCAPE && action == glfw.PRESS {
-        global_render_state.cursor_locked = !global_render_state.cursor_locked
+        render_state.cursor_locked = !render_state.cursor_locked
         
-        if global_render_state.cursor_locked {
+        if render_state.cursor_locked {
             assert(cast(bool)glfw.RawMouseMotionSupported())
-            glfw.SetInputMode(global_render_state.window, glfw.CURSOR, glfw.CURSOR_DISABLED);
-            glfw.SetInputMode(global_render_state.window, glfw.RAW_MOUSE_MOTION, 1);
+            glfw.SetInputMode(render_state.window, glfw.CURSOR, glfw.CURSOR_DISABLED);
+            glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 1);
         } else {
-            glfw.SetInputMode(global_render_state.window, glfw.CURSOR, glfw.CURSOR_NORMAL);
-            glfw.SetInputMode(global_render_state.window, glfw.RAW_MOUSE_MOTION, 0);
+            glfw.SetInputMode(render_state.window, glfw.CURSOR, glfw.CURSOR_NORMAL);
+            glfw.SetInputMode(render_state.window, glfw.RAW_MOUSE_MOTION, 0);
         }
     }
 
     if key == glfw.KEY_W {
-        global_render_state.temp_move[ActionEvent.MOVE_FORWARD] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_FORWARD] = action != glfw.RELEASE
     }
     if key == glfw.KEY_A {
-        global_render_state.temp_move[ActionEvent.MOVE_LEFT] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_LEFT] = action != glfw.RELEASE
     }
     if key == glfw.KEY_S {
-        global_render_state.temp_move[ActionEvent.MOVE_BACKWARD] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_BACKWARD] = action != glfw.RELEASE
     }
     if key == glfw.KEY_D {
-        global_render_state.temp_move[ActionEvent.MOVE_RIGHT] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_RIGHT] = action != glfw.RELEASE
     }
     if key == glfw.KEY_SPACE {
-        global_render_state.temp_move[ActionEvent.MOVE_UP] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_UP] = action != glfw.RELEASE
     }
     if key == glfw.KEY_LEFT_CONTROL {
-        global_render_state.temp_move[ActionEvent.MOVE_DOWN] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_DOWN] = action != glfw.RELEASE
     }
     if key == glfw.KEY_LEFT_SHIFT {
-        global_render_state.temp_move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
+        render_state.temp_move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
     }
 
     // fmt.printfln("move %v",global_render_state.move)
@@ -184,32 +193,39 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
 }
 MouseButtonProc  :: proc "c" (window: glfw.WindowHandle, button, action, mods: c.int) {
     context = runtime.default_context()
-    assert(global_render_state.window == window)
-
     
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
 }
 CursorPosProc    :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     context = runtime.default_context()
-    assert(global_render_state.window == window)
     
-    global_render_state.mx = cast(i32)xpos
-    global_render_state.my = cast(i32)ypos
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+    
+    render_state.mx = cast(i32)xpos
+    render_state.my = cast(i32)ypos
     // fmt.println(xpos, ypos)
     // fmt.println("diff",global_render_state.mx-global_render_state.last_mx, global_render_state.my-global_render_state.last_my)
 }
 ScrollProc       :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) {
     context = runtime.default_context()
-    assert(global_render_state.window == window)
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
 }
 WindowSizeProc   :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     context = runtime.default_context()
-    assert(global_render_state.window == window)
-    global_render_state.width = cast(i32)width
-    global_render_state.height = cast(i32)height
+
+    engine := cast(^EngineState)glfw.GetWindowUserPointer(window)
+    render_state := &engine.render_state
+
+    render_state.width = cast(i32)width
+    render_state.height = cast(i32)height
     // fmt.println("Windows size: ", width, " ", height);
 }
 
-load_shader :: proc (path : string) -> (shader: Shader) {
+load_shader :: proc (path : string, shader: ^Shader) {
     bytes: []byte
     ok: bool
     bytes, ok = os.read_entire_file(path)
@@ -232,8 +248,7 @@ load_shader :: proc (path : string) -> (shader: Shader) {
     }
     shader.uniforms = gl.get_uniforms_from_program(shader.program)
 
-    fmt.printf("Loaded shader '%s'\n", path)
-    return
+    // fmt.printf("Loaded shader '%s'\n", path)
 }
 
 load_texture :: proc {
@@ -241,20 +256,22 @@ load_texture :: proc {
     load_texture_from_buffer,
 }
 
-load_texture_from_file :: proc (path: string) -> (texture: Texture) {
+load_texture_from_file :: proc (path: string, texture: ^Texture) {
     bytes, ok := os.read_entire_file(path)
     if !ok {
         fmt.eprintln("Could not open",path)
         os.exit(1)
     }
 
-    texture = load_texture_from_buffer(bytes)
+    load_texture_from_buffer(bytes, texture)
 
     fmt.printf("Loaded texture '%s'\n", path)
-
-    return
 }
-load_texture_from_buffer :: proc (data: []u8) -> (texture: Texture) {
+load_texture_from_buffer :: proc (data: []u8, texture: ^Texture) {
+    if texture.raw_data != nil {
+        stb_image.image_free(texture.raw_data)
+        texture.raw_data = nil
+    }
 
     stb_image.set_flip_vertically_on_load(1)
 
@@ -264,6 +281,13 @@ load_texture_from_buffer :: proc (data: []u8) -> (texture: Texture) {
 
     texture.width = cast(u32)width
     texture.height = cast(u32)height
+    texture.raw_data = buffer
+}
+
+init_texture_render :: proc (texture: ^Texture) {
+    if texture.id != 0 {
+        gl.DeleteTextures(1, &texture.id)
+    }
 
     gl.GenTextures(1, &texture.id)
     gl.BindTexture(gl.TEXTURE_2D, texture.id)
@@ -273,13 +297,12 @@ load_texture_from_buffer :: proc (data: []u8) -> (texture: Texture) {
     // gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, buffer)
+    gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cast(i32)texture.width, cast(i32)texture.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, texture.raw_data)
 
     gl.BindTexture(gl.TEXTURE_2D, 0)
 
-    stb_image.image_free(buffer)
-
-    return
+    stb_image.image_free(texture.raw_data)
+    texture.raw_data = nil
 }
 
 update_projection :: proc (render : ^RenderState) {
@@ -292,13 +315,12 @@ update_projection :: proc (render : ^RenderState) {
     render.projection = projection * model_view
 }
 
-first_mx : bool = false
 update_camera :: proc (render : ^RenderState) {
     if render.cursor_locked {
-        if !first_mx {
+        if !render.first_mx {
             render.last_mx = render.mx
             render.last_my = render.my
-            first_mx = true
+            render.first_mx = true
         }
         dx := render.mx - render.last_mx
         dy := render.my - render.last_my
@@ -332,7 +354,7 @@ update_camera :: proc (render : ^RenderState) {
 }
 
 
-render_state :: proc (state: ^GameState) {
+render_state :: proc (state: ^EngineState) {
     render := &state.render_state
 
     if glfw.WindowShouldClose(render.window) {
@@ -342,7 +364,7 @@ render_state :: proc (state: ^GameState) {
     }
 
     // glfw.PollEvents()
-    glfw.WaitEventsTimeout(1/144.0)
+    // glfw.WaitEventsTimeout(1/144.0)
     
     update_camera(render)
     update_projection(render)
@@ -362,7 +384,7 @@ render_state :: proc (state: ^GameState) {
 
 
     diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
-    // render_rect(state, 900 + math.cos(4*diff) * 400, 1000 + math.sin(4*diff) * 400, 100, 100, {1, 0.2, 0.2, 1})
+    render_rect(state, 400 + math.cos(4*diff) * 400, 400 + math.sin(4*diff) * 400, 50, 50, {1, 0.2, 0.2, 1})
     // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
     color: vec4 = {1, 1, 1, 1}
@@ -386,123 +408,59 @@ render_state :: proc (state: ^GameState) {
     glfw.SwapBuffers(render.window)
 }
 
-render_model :: proc (state: ^GameState, model: ^Model, pos: vec3) {
+render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3) {
     render := &state.render_state
-    gl.UseProgram(render.object_shader.program)
+
+    if model == nil {
+        return
+    }
+
+    if render.object_shader.shader == nil {
+        return
+    }
+
+    gl.UseProgram(render.object_shader.shader.program)
 
     transform := glsl.mat4Translate(pos)
 
-    gl.UniformMatrix4fv(render.object_shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
-    gl.UniformMatrix4fv(render.object_shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    gl.Uniform3f(render.object_shader.uniforms["uCameraPos"].location,
+    gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
+    gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
+    gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
         render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
-    // mesh := model.scene.mMeshes[0]
-    // material := model.scene.mMaterials[mesh.mMaterialIndex]
-    // gl.UniformMatrix4fv(render.object_shader.uniforms["uMaterials"].location, )
-    // gl.UniformMatrix4fv(render.object_shader.uniforms["uLightSpaceMatrix"].location, )
-
-    // max: u32 = 4
-    // color: ai.aiColor4D
-    // ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_DIFFUSE, 0, 0, transmute([^]f32)&color, &max)
-    // if max != 4 {
-    //     color.a = 1.0
-    // }
-    // gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].diffuse_color"].location, 1, transmute([^]f32)&color)
-
-    // max = 4
-    // ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_COLOR_SPECULAR, 0, 0, transmute([^]f32)&color, &max)
-    // if max != 4 {
-    //     color.a = 1.0
-    // }
-    // gl.Uniform3fv(render.object_shader.uniforms["uMaterials[0].specular"].location, 1, transmute([^]f32)&color)
-
-    // max = 1
-    // shiny: f32
-    // ai.aiGetMaterialFloatArray(material, ai.AI_MATKEY_SHININESS, 0, 0, transmute([^]f32)&shiny, &max)
-    // gl.Uniform1f(render.object_shader.uniforms["uMaterials[0].shininess"].location, shiny)
-
-
-    // gl.Uniform3i(render.object_shader.uniforms["uLightCount"].location, 1, 0, 0)
-    
-    // dir_light := glsl.normalize_vec3(vec3{0.1, -1, 0.2})
-    // dir_ambient := glsl.normalize_vec3(vec3{0.2, 0.2, 0.2})
-    // dir_diffuse := glsl.normalize_vec3(vec3{0.8, 0.8, 0.2})
-    // dir_specular := glsl.normalize_vec3(vec3{1.0, 1.0, 0.8})
-    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.direction"].location, 1, transmute([^]f32)&dir_light)
-    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.ambient"].location, 1, transmute([^]f32)&dir_ambient)
-    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.diffuse"].location, 1, transmute([^]f32)&dir_diffuse)
-    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.specular"].location, 1, transmute([^]f32)&dir_specular)
-
-    // gl.Uniform3fv(render.object_shader.uniforms["uDirLight.specular"].location, 1, transmute([^]f32)&dir_specular)
-    
-    
-    // gl.UniformMatrix4fv(render.object_shader.uniforms["uSpotLights"].location, )
-    // gl.UniformMatrix4fv(render.object_shader.uniforms["uPointLights"].location, )
-    // gl.UniformMatrix4fv(render.object_shader.uniforms["shadow_map"].location, )
-    
     for i in 0..<len(model.meshes) {
         mesh := &model.meshes[i]
         
         gl.ActiveTexture(gl.TEXTURE0)
         gl.BindTexture(gl.TEXTURE_2D, mesh.material.base_texture.id)
 
-        gl.Uniform1i(render.object_shader.uniforms["diffuse_map"].location, 0)
+        gl.Uniform1i(render.object_shader.shader.uniforms["diffuse_map"].location, 0)
         gl.BindVertexArray(mesh.vao)
         gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
     }
 }
 
 
-render_rect :: proc (state: ^GameState, x,y,w,h: f32, color: [4]f32) {
+render_rect :: proc (state: ^EngineState, x,y,w,h: f32, color: [4]f32) {
     render := &state.render_state
-    gl.UseProgram(render.ui_shader.program)
 
-    gl.Uniform2f(render.ui_shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
-    gl.Uniform2f(render.ui_shader.uniforms["uPos"].location, x, y)
-    gl.Uniform2f(render.ui_shader.uniforms["uSize"].location, w, h)
-    gl.Uniform4f(render.ui_shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
-    gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
+    if render.ui_shader.shader == nil {
+        return
+    }
+
+    gl.UseProgram(render.ui_shader.shader.program)
+
+    gl.Uniform2f(render.ui_shader.shader.uniforms["uWindow"].location, cast(f32)render.width, cast(f32)render.height)
+    gl.Uniform2f(render.ui_shader.shader.uniforms["uPos"].location, x, y)
+    gl.Uniform2f(render.ui_shader.shader.uniforms["uSize"].location, w, h)
+    gl.Uniform4f(render.ui_shader.shader.uniforms["uColor"].location, color.r, color.g, color.b, color.a)
+    // gl.Uniform1i(render.ui_shader.uniforms["uSampler"].location, 0)
 
     // gl.ActiveTexture(gl.TEXTURE0)
     // gl.BindTexture(gl.TEXTURE_2D, render.texture.id)
 
     gl.BindVertexArray(render.mesh_rect.vao)
     gl.DrawArrays(gl.TRIANGLES, 0, 6)
-}
-
-create_mesh :: proc (vertex_data: []f32, index_data: []u32, material: Material) -> (mesh: Mesh) {
-    mesh.material = material
-
-    gl.GenVertexArrays(1, &mesh.vao)
-    gl.GenBuffers     (1, &mesh.vbo)
-    gl.GenBuffers     (1, &mesh.ibo)
-
-    gl.BindVertexArray(mesh.vao)
-
-    gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
-    gl.BufferData(gl.ARRAY_BUFFER, len(vertex_data) * size_of(f32), raw_data(vertex_data), gl.STATIC_DRAW)
-
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
-    gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(index_data) * size_of(u32), raw_data(index_data), gl.STATIC_DRAW)
-
-    // position attribute
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)0)
-	gl.EnableVertexAttribArray(0)
-
-    // normal attribyte
-    gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(3*size_of(f32)))
-	gl.EnableVertexAttribArray(1)
-        
-    // texture coordinate attribute
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(6*size_of(f32)))
-	gl.EnableVertexAttribArray(2)
-
-    gl.BindVertexArray(0)
-
-    mesh.index_count = cast(i32)len(index_data)
-
-    return
 }
 
 

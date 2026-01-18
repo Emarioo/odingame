@@ -170,10 +170,10 @@ compile_odin :: proc(src_path: string, dst_path: string) -> bool {
         "odin",
         "build",
         src_path,
-        "-collection:lib=lib",
+        // "-collection:lib=lib",
         "-debug",
         "-o:none",
-        "-build-mode:shared", // dynamic on Windows?
+        "-build-mode:shared",
         out_arg,
     }
       

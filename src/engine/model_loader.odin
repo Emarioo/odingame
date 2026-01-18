@@ -1,4 +1,4 @@
-package game
+package engine
 
 // import "../cgltf"
 import "vendor:cgltf"
@@ -13,17 +13,24 @@ import "core:mem"
 import "core:c"
 import "base:runtime"
 import "core:time"
+import gl "vendor:OpenGL"
+import stb_image "vendor:stb/image"
+
+vec2 :: glsl.vec2
+vec3 :: glsl.vec3
+vec4 :: glsl.vec4
+mat4 :: glsl.mat4
 
 
 Vertex :: struct {
     // See object.glsl shader
-    pos : vec3,
-    normal : vec3,
-    texcoord : vec2,
+    pos:      vec3,
+    normal:   vec3,
+    texcoord: vec2,
 }   
 
 Material :: struct {
-    diffuse : vec3,
+    diffuse:      vec3,
     // specular : vec3,
     base_texture: Texture,
 }
@@ -31,16 +38,15 @@ Material :: struct {
 Mesh :: struct {
     vao, vbo, ibo: u32,
     index_count: i32,
+    unused: bool,
 
     material: Material,
-    vertices : []Vertex,
-    indices : []u32,
+    vertex_data: []f32,
+    indices:  []u32,
 }
 
 Model :: struct {
-    // scene : ^ai.aiScene,
-    raw_data : ^cgltf.data,
-    meshes : [dynamic]Mesh,
+    meshes: [dynamic]Mesh,
 }
 
 
@@ -67,22 +73,23 @@ override_file_release :: proc "c" (memory_options: ^cgltf.memory_options, file_o
 }
 
 
-cleanup_model :: proc (model: ^Model) {
-    cgltf.free(model.raw_data)
-    model.raw_data = nil
+// cleanup_model :: proc (model: ^Model) {
+//     cgltf.free(model.raw_data)
+//     model.raw_data = nil
 
-    for m in model.meshes {
-        gl.DeleteVertexArrays(1, &mesh.vao)
-        gl.DeleteBuffers     (1, &mesh.vbo)
-        gl.DeleteBuffers     (1, &mesh.ibo)
+//     for i in 0..<len(model.meshes) {
+//         mesh := &model.meshes[i]
+//         gl.DeleteVertexArrays(1, &mesh.vao)
+//         gl.DeleteBuffers     (1, &mesh.vbo)
+//         gl.DeleteBuffers     (1, &mesh.ibo)
 
-        gl.DeleteTextures(1, &mesh.material.texture)
+//         gl.DeleteTextures(1, &mesh.material.base_texture.id)
 
-        free(mesh.vertices)
-        free(mesh.indices)
-    }
-    clear(&model.meshes)
-}
+//         delete(mesh.vertices)
+//         delete(mesh.indices)
+//     }
+//     clear(&model.meshes)
+// }
 
 
 load_model :: proc (path : string, model: ^Model) {
@@ -107,11 +114,15 @@ load_model :: proc (path : string, model: ^Model) {
         return
     }
 
-    model.raw_data = data
-
     scene := data.scenes[0]
     node := scene.nodes[0]
     mesh := node.mesh
+
+    next_mesh_index: i32
+
+    for &mesh in model.meshes {
+        mesh.unused = true
+    }
 
     for pi in 0..<len(mesh.primitives) {
         primitive := &mesh.primitives[pi]
@@ -164,7 +175,7 @@ load_model :: proc (path : string, model: ^Model) {
         // @TODO material depends on 
         if primitive.material.has_pbr_metallic_roughness && primitive.material.pbr_metallic_roughness.base_color_texture.texture != nil {
             bytes := slice.from_ptr(cast(^u8)mem.ptr_offset(cast(^u8)primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.buffer.data, primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.offset), cast(int) primitive.material.pbr_metallic_roughness.base_color_texture.texture.image_.buffer_view.size)
-            material.base_texture = load_texture(bytes)
+            load_texture(bytes, &material.base_texture)
         }
 
         // material.diffuse_color = {1,1,1}
@@ -174,80 +185,68 @@ load_model :: proc (path : string, model: ^Model) {
 
         f32_vertices := slice.from_ptr(cast(^f32)slice.first_ptr(vertices), len(vertices) * size_of(Vertex) / size_of(f32))
 
-        append(&model.meshes, create_mesh(f32_vertices, indices, material))
-        // append(&model.meshes, create_mesh(f32_vertices, indices, material))
+        if next_mesh_index >= cast(i32)len(model.meshes) {
+            append(&model.meshes, Mesh{})
+        }
+        mesh := &model.meshes[next_mesh_index]
+        next_mesh_index += 1
+        mesh.unused = false
+
+        mesh.vertex_data = f32_vertices
+        mesh.indices = indices
+        mesh.material = material
+        mesh.index_count = cast(i32)len(indices)
     }
 
-    // cgltf.free(data)
-    fmt.printfln("Loaded model '%v'", path)
-
-    return
+    cgltf.free(data)
 }
 
+load_model_render :: proc (model: ^Model) {
+    for i := len(model.meshes)-1; i >= 0; i -= 1 {
+        mesh := &model.meshes[i]
 
-/*
-
-import ai "lib:assimp"
-
-load_model :: proc (path : string) -> (model: Model) {
-    
-    model.scene = ai.aiImportFile(strings.unsafe_string_to_cstring(path), cast(u32)ai.aiPostProcessSteps.aiProcess_MakeLeftHanded |
-        cast(u32)ai.aiPostProcessSteps.aiProcess_Triangulate
-    )
-
-    if model.scene == nil {
-        fmt.eprintln("Could not load",path, ", error:",ai.aiGetErrorString());
-        os.exit(1)
-    }
-
-    assert(1 <= model.scene.mRootNode.mNumMeshes)
-    
-    mesh_index := model.scene.mRootNode.mMeshes[0]
-
-    assert(mesh_index < model.scene.mNumMeshes)
-    mesh : ^ai.aiMesh = model.scene.mMeshes[mesh_index]
-
-    Vertex :: struct {
-        // See object.glsl shader
-        pos : vec3,
-        normal : vec3,
-        texture : vec3,
-    }   
-
-    vertices := make([]Vertex, mesh.mNumVertices * size_of(Vertex) / size_of(f32))
-    indices  := make([]u32, mesh.mNumFaces * 3)
-
-    for i in 0..<mesh.mNumVertices {
-        vertices[i].pos = mesh.mVertices[i]
-    }
-    if mesh.mNormals != nil {
-        for i in 0..<mesh.mNumVertices {
-            vertices[i].normal = mesh.mNormals[i]
+        if mesh.vao != 0 {
+            gl.DeleteVertexArrays(1, &mesh.vao)
+            gl.DeleteBuffers     (1, &mesh.vbo)
+            gl.DeleteBuffers     (1, &mesh.ibo)
+            if mesh.material.base_texture.id != 0 {
+                gl.DeleteTextures(1, &mesh.material.base_texture.id)
+            }
         }
-    }
-    if mesh.mTextureCoords[0] != nil {
-        assert(mesh.mNumUVComponents[0] == 2)
-        for i in 0..<mesh.mNumVertices {
-            vertices[i].texture.xy = mesh.mTextureCoords[0][i].xy
-            vertices[i].texture.z = 0.0 // local material index (used in shader, uMaterials[0])
+        if mesh.unused {
+            unordered_remove(&model.meshes, i)
+            continue
         }
+
+        gl.GenVertexArrays(1, &mesh.vao)
+        gl.GenBuffers     (1, &mesh.vbo)
+        gl.GenBuffers     (1, &mesh.ibo)
+
+        gl.BindVertexArray(mesh.vao)
+
+        gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
+        gl.BufferData(gl.ARRAY_BUFFER, len(mesh.vertex_data) * size_of(f32), raw_data(mesh.vertex_data), gl.STATIC_DRAW)
+
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
+        gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(mesh.indices) * size_of(u32), raw_data(mesh.indices), gl.STATIC_DRAW)
+
+        // position attribute
+        gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)0)
+        gl.EnableVertexAttribArray(0)
+
+        // normal attribyte
+        gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(3*size_of(f32)))
+        gl.EnableVertexAttribArray(1)
+            
+        // texture coordinate attribute
+        gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)(6*size_of(f32)))
+        gl.EnableVertexAttribArray(2)
+
+        gl.BindVertexArray(0)
+
+        init_texture_render(&mesh.material.base_texture)
+        
+        delete(mesh.vertex_data)
+        delete(mesh.indices)
     }
-
-    fmt.printfln("vertex %v", mesh.mNumVertices)
-    fmt.printfln("faces %v", mesh.mNumFaces)
-    for i in 0..<mesh.mNumFaces {
-        // Seems like assimp and opengl has different
-        // order for which is the front of the face (clockwise vs counter clockwise)
-        indices[3*i + 0] = mesh.mFaces[i].mIndices[2]
-        indices[3*i + 1] = mesh.mFaces[i].mIndices[1]
-        indices[3*i + 2] = mesh.mFaces[i].mIndices[0]
-    }
-
-    f32_vertices := slice.from_ptr(cast(^f32) slice.first_ptr(vertices), len(vertices) * size_of(Vertex) / size_of(f32))
-    model.mesh = create_mesh(f32_vertices, indices)
-
-    fmt.printf("Loaded model '%s'\n", path)
-
-    return
 }
-*/

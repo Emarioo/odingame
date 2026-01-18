@@ -1,14 +1,22 @@
 package game
 
-import "magic"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg/glsl"
+import "core:strings"
+
+import "magic"
 import "../util"
+import "../engine"
+
+vec2 :: glsl.vec2
+vec3 :: glsl.vec3
+vec4 :: glsl.vec4
+mat4 :: glsl.mat4
 
 update_init :: proc (state: ^GameState) {
 
-    player, player_index := create_entity(state)
+    player, player_index := engine.create_entity(&state.engine)
     state.player_index = player_index
 
     text := `insipere
@@ -18,22 +26,19 @@ update_init :: proc (state: ^GameState) {
 
     magic.transpile_spell(text)
 
-    
-
-    art_path := "art"
-
-    util.watcher_init(&state.art_watcher, "art")
+    assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
+    util.watcher_init(&state.engine.storage.art_watcher, assets_path)
 }
 
 apply_force :: proc (state: ^GameState) {
-    speed: f32 = 0.05
-    render := &state.render_state
+    speed: f32 = 0.5
+    render := &state.engine.render_state
 
-    if render.move[ActionEvent.MOVE_SPRINT] {
-        speed *= 2
+    if render.move[engine.ActionEvent.MOVE_SPRINT] {
+        speed *= 4
     }
 
-    player := get_entity(state, state.player_index)
+    player := engine.get_entity(&state.engine, state.player_index)
 
 
     // Apply friction
@@ -51,33 +56,33 @@ apply_force :: proc (state: ^GameState) {
 
     force : vec3
 
-    if render.move[ActionEvent.MOVE_FORWARD] {
+    if render.move[engine.ActionEvent.MOVE_FORWARD] {
         // forward
         force += -forward_vector 
     }
-    if render.move[ActionEvent.MOVE_RIGHT] {
+    if render.move[engine.ActionEvent.MOVE_RIGHT] {
         // right
         force += right_vector 
     }
-    if render.move[ActionEvent.MOVE_BACKWARD] {
+    if render.move[engine.ActionEvent.MOVE_BACKWARD] {
         // back
         force += forward_vector 
     }
-    if render.move[ActionEvent.MOVE_LEFT] {
+    if render.move[engine.ActionEvent.MOVE_LEFT] {
         // left
         force += -right_vector 
     }
-    if render.move[ActionEvent.MOVE_UP] {
+    if render.move[engine.ActionEvent.MOVE_UP] {
         // up
         force += up_vector
     }
-    if render.move[ActionEvent.MOVE_DOWN] {
+    if render.move[engine.ActionEvent.MOVE_DOWN] {
         // down
         force += -up_vector 
     }
     player.force += force * speed
 
-    state.render_state.camera_position += force * speed * state.fixedDelta
+    state.engine.render_state.camera_position += force * speed * state.engine.fixedDelta
 
     // Put events into recorder
     // only care about event changes. Key started or stopped being pressed.
@@ -114,14 +119,15 @@ update_state :: proc (state: ^GameState) {
 
     // update positions
 
-    for i in 0..<state.entities_count {
-        ent := &state.entities[i]
+    // @TODO Move to engine?
+    for i in 0..<state.engine.entities_count {
+        ent := &state.engine.entities[i]
         
         // fmt.printfln("force %v %v %v", ent.force.x, ent.force.y, ent.force.z)
 
         // @TODO SIMD
         ent.vel += ent.force
-        ent.pos += ent.vel * state.fixedDelta
+        ent.pos += ent.vel * state.engine.fixedDelta
         ent.force = {0,0,0}
 
     }
