@@ -15,24 +15,24 @@ The driver can detect updated source assets and game code and automatically reco
 
 # Repository structure
 ```
-    releases
-        odingame-0.1.3-windows-x86_64
-            ...
-    art                         - Raw art sources for the game
-    assets                      - Exported models, textures, for the game
-    docs 
-    lib/libs/extern             - Third-party code.
-    src                         - Source code
-        driver
-            main.odin           - entry point
-        engine
-            input
-            rendering
-        game
-            magic
-    tools                       - Build-system scripts
-        fetch_dependencies.py
-    build.py                    - Main build script, may call into tools
+releases
+    odingame-0.1.3-windows-x86_64
+        ...
+art                         - Raw art sources for the game
+assets                      - Exported models, textures, for the game
+docs 
+lib/libs/extern             - Third-party code.
+src                         - Source code
+    driver
+        main.odin           - entry point
+    engine
+        input
+        rendering
+    game
+        magic
+tools                       - Build-system scripts
+    fetch_dependencies.py
+build.py                    - Main build script, may call into tools
 ```
 
 # Distributed structure
@@ -59,9 +59,5 @@ odingame-0.1.3-windows-x86_64
                 textures
                     waypoint.png
     data
-        
-```
-```
-odingame-0.1.3-linux-x86_64
-
+        world.data
 ```

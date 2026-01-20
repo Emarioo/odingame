@@ -224,12 +224,13 @@ load_model_render :: proc (model: ^Model) {
 
         gl.BindVertexArray(mesh.vao)
 
+        start := time.now()
+
         gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
         gl.BufferData(gl.ARRAY_BUFFER, len(mesh.vertex_data) * size_of(f32), raw_data(mesh.vertex_data), gl.STATIC_DRAW)
 
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo)
         gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(mesh.indices) * size_of(u32), raw_data(mesh.indices), gl.STATIC_DRAW)
-
         // position attribute
         gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(f32) * 8, cast(uintptr)0)
         gl.EnableVertexAttribArray(0)
@@ -245,6 +246,10 @@ load_model_render :: proc (model: ^Model) {
         gl.BindVertexArray(0)
 
         init_texture_render(&mesh.material.base_texture)
+
+        end := time.now()
+        
+        fmt.printfln("%v", time.diff(start, end))
         
         delete(mesh.vertex_data)
         delete(mesh.indices)

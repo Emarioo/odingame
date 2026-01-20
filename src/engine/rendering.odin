@@ -28,6 +28,7 @@ ActionEvent :: enum {
     MOVE_UP,
     MOVE_DOWN,
     MOVE_SPRINT,
+    RELOAD_ASSETS,
     MOVE_MAX,
 }
 
@@ -185,6 +186,9 @@ KeyProc          :: proc "c" (window: glfw.WindowHandle, key, scancode, action, 
     }
     if key == glfw.KEY_LEFT_SHIFT {
         render_state.temp_move[ActionEvent.MOVE_SPRINT] = action != glfw.RELEASE
+    }
+    if key == glfw.KEY_R && (mods & glfw.MOD_CONTROL) != 0 {
+        render_state.temp_move[ActionEvent.RELOAD_ASSETS] = true
     }
 
     // fmt.printfln("move %v",global_render_state.move)
@@ -370,7 +374,7 @@ render_state :: proc (state: ^EngineState) {
     update_projection(render)
 
     gl.Viewport(0, 0, render.width, render.height)
-    gl.ClearColor(0.2,0.3,0.3,1.0)
+    gl.ClearColor(0.3,0.5,0.6,1.0)
     gl.Clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)
 
 
@@ -384,7 +388,7 @@ render_state :: proc (state: ^EngineState) {
 
 
     diff := cast(f32)(time.time_to_unix_nano(time.now()) - time.time_to_unix_nano(state.startTime)) / 1.0e9
-    render_rect(state, 400 + math.cos(4*diff) * 400, 400 + math.sin(4*diff) * 400, 50, 50, {1, 0.2, 0.2, 1})
+    render_rect(state, cast(f32)render.width/2 - 25 + math.cos(2*diff) * cast(f32)(render.width/2-50), cast(f32)render.height/2 - 25 + math.sin(2*diff) * cast(f32)(render.height/2-50), 50, 50, {1, 0.2, 0.2, 1})
     // render_rect(state, 900 + diff * 20, 1000, 500, 500, {1, 0.2, 0.2, 1})
     // render_rect(state, 400 + diff * 20, 300, 500, 500, {1, 0.2, 0.2, 1})
     color: vec4 = {1, 1, 1, 1}

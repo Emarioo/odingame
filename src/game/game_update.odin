@@ -2,8 +2,10 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:sync"
 import "core:math/linalg/glsl"
 import "core:strings"
+import "core:os/os2"
 
 import "magic"
 import "../util"
@@ -113,6 +115,54 @@ update_state :: proc (state: ^GameState) {
     // }
     // tick_record: ^TickRecord = &state.recording.tick_records[len(state.recording.tick_records)-1]
     // tick_record.frame = state.current_tick
+
+    // fmt.println("State")
+    if state.engine.render_state.move[engine.ActionEvent.RELOAD_ASSETS] {
+        state.engine.render_state.temp_move[engine.ActionEvent.RELOAD_ASSETS] = false
+
+        // The engine should handle reloading game code and assets at the same time.
+        // Good way to stress test it.
+
+        when ODIN_OS == .Windows {
+            args := []string{
+                "python",
+                "build.py",
+                "hot",
+            }
+        } else {
+            args := []string{
+                "python3",
+                "build.py",
+                "hot",
+            }
+        }
+        // fmt.println("RELOADING GAME CODE")
+
+        handle, err := os2.process_start(
+            os2.Process_Desc{
+                working_dir = "",
+                command = args,
+                env =  []string{},
+                stderr = os2.stderr,
+                stdout = os2.stdout,
+                stdin = os2.stdin,
+            }
+        )
+        if err == os2.ERROR_NONE {
+            err = os2.process_close(handle)
+            if err != os2.ERROR_NONE {
+                fmt.printfln("process_close: %v", err)
+            }
+        } else {
+            fmt.printfln("process_start: %v", err)
+        }
+
+        sync.lock(&state.engine.storage.assets_mutex)
+        for key, asset in state.engine.storage.assets_by_name {
+            engine.reload_asset(&state.engine, asset)
+        }
+        sync.unlock(&state.engine.storage.assets_mutex)
+    }
 
     // apply player force
     apply_force(state)

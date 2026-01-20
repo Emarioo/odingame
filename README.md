@@ -18,6 +18,9 @@ Game made in odin?
 Odin provides **GLFW** and **OpenGL bindings** for Windows and Linux.
 It also has cgltf and stb_image but on Linux you will need to build them yourself (binaries not provided automatically).
 
+For models, you need to export the blender files.
+Not automatic at the moment. **WIP**
+
 Build and run the game:
 ```bash
 build.py run

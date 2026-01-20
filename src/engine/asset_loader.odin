@@ -25,24 +25,59 @@ Asset :: struct {
     type: AssetType,
     status: AssetStatus,
     scheduled_time: time.Time,
+    submit_time: time.Time,
+    loaded_time: time.Time,
+    processing_time: time.Duration,
 
     model: ^Model,
     wip_model: ^Model, // background model being processed.
 
     shader: ^Shader,
     wip_shader: ^Shader,
-
 }
+
+
+AssetQueue :: struct {
+    list:  [dynamic]^Asset,
+    mutex: sync.Mutex,
+}
+
+ASSET_RELOAD_TIME :: 100 * time.Millisecond
+ASSET_TIME_QUANTUM :: 10 * time.Millisecond
+
+queue_push :: proc (queue: ^AssetQueue, asset: ^Asset) {
+    sync.mutex_lock(&queue.mutex)
+    defer sync.mutex_unlock(&queue.mutex)
+    append(&queue.list, asset)
+}
+// Pops asset ready to be processed, asset may not be ready due to ASSET_RELOAD_TIME
+queue_pop :: proc (queue: ^AssetQueue) -> (out_asset: ^Asset) {
+    sync.mutex_lock(&queue.mutex)
+    defer sync.mutex_unlock(&queue.mutex)
+
+    out_asset = nil
+    now := time.now()
+    for i:=len(queue.list)-1; i>=0; i-=1 {
+        asset := queue.list[i]
+        diff := time.diff(asset.scheduled_time, now)
+        if diff > ASSET_RELOAD_TIME {
+            out_asset = asset
+            unordered_remove(&queue.list, i)
+            break
+        }
+    }
+    return
+}
+
 
 AssetStorage :: struct {
     assets_by_name: map[string]^Asset,
     assets_by_src:  map[string]^Asset,
     game_directory: string,
+    assets_mutex:   sync.Mutex,
     
-    scheduled_main:         [dynamic]^Asset,
-    scheduled_main_mutex:   sync.Mutex,
-    scheduled_render:       [dynamic]^Asset,
-    scheduled_render_mutex: sync.Mutex,
+    render_queue: AssetQueue, // These assets require processing on the render thread, OpenGL forces this work onto one thread.
+    main_queue:   AssetQueue, // These assets require File IO or vertex, image loading and processing (anything that doesn't need render thread).
 
     art_watcher: util.Watcher,
 }
@@ -57,24 +92,25 @@ register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Ass
     asset.name = strings.clone(name)
     asset.path = strings.clone(path)
     // @TODO Check that the asset doesn't exist (path and name?)
+    sync.lock(&state.storage.assets_mutex)
     state.storage.assets_by_name[asset.name] = asset
     state.storage.assets_by_src[path] = asset
+    sync.unlock(&state.storage.assets_mutex)
+
+    asset.scheduled_time = time.from_nanoseconds(0)
+    asset.submit_time = time.now()
+    asset.processing_time = 0
 
     switch filepath.ext(path) {
         case ".glsl":
             asset.type   = .SHADER
             asset.status = .NEEDS_RENDER_PROCESSING
-            sync.lock(&state.storage.scheduled_render_mutex)
-            append(&state.storage.scheduled_render, asset)
-            sync.unlock(&state.storage.scheduled_render_mutex)
+            queue_push(&state.storage.render_queue, asset)
         case ".glb":
             asset.type   = .MODEL
             asset.status = .NEEDS_MAIN_PROCESSING
-            sync.lock(&state.storage.scheduled_main_mutex)
-            append(&state.storage.scheduled_main, asset)
-            sync.unlock(&state.storage.scheduled_main_mutex)
+            queue_push(&state.storage.main_queue, asset)
     }
-
 
     return asset
 }
@@ -85,14 +121,18 @@ can_be_reloaded :: proc (asset: ^Asset) -> bool {
 
 
 find_asset_by_name :: proc (storage: ^AssetStorage, name: string) -> ^Asset {
+    sync.lock(&storage.assets_mutex)
+    defer sync.unlock(&storage.assets_mutex)
     return storage.assets_by_name[name]
     
 }
 find_asset_by_src :: proc (storage: ^AssetStorage, path: string) -> ^Asset {
+    sync.lock(&storage.assets_mutex)
+    defer sync.unlock(&storage.assets_mutex)
     return storage.assets_by_src[path]
 }
 
-reload_asset :: proc (state: ^EngineState, asset: ^Asset) {
+reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.Time = time.Time{0}) {
     // Here we assume two threads can't reload an asset at the same time.
     // Race condition if this happens.
     if asset.status != .CAN_BE_RENDERED {
@@ -101,23 +141,22 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset) {
     }
     fmt.printfln("Submit reload %v from %v", asset.name, asset.path)
 
+    asset.scheduled_time = scheduled_time
+    asset.submit_time = time.now()
+    asset.processing_time = 0
+
     switch asset.type {
         case .MODEL:
             asset.status = .NEEDS_MAIN_PROCESSING
-            sync.lock(&state.storage.scheduled_main_mutex)
-            append(&state.storage.scheduled_main, asset)
-            sync.unlock(&state.storage.scheduled_main_mutex)
+            queue_push(&state.storage.main_queue, asset)
         case .SHADER:
             asset.status = .NEEDS_RENDER_PROCESSING
-            sync.lock(&state.storage.scheduled_render_mutex)
-            append(&state.storage.scheduled_render, asset)
-            sync.unlock(&state.storage.scheduled_render_mutex)
-
+            queue_push(&state.storage.render_queue, asset)
     }
 }
 
 
-process_asset_main :: proc (state: ^EngineState, asset: ^Asset) {
+process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
     // caller needs to change state and lock asset schedule arrays
     fmt.printfln("Process (main) %v", asset.path)
     
@@ -130,11 +169,19 @@ process_asset_main :: proc (state: ^EngineState, asset: ^Asset) {
             load_model(asset.path, asset.wip_model)
         case .SHADER:
             fmt.printfln("ASSET SHADER WAS ADDED TO MAIN PROCESSING! %v", asset.name, asset.path)
+            // False would tell CALLER that the asset isn't done yet.
+            // To prevent infinite processing we return true.
+            return true
     }
+    
+    // @IMPORTANT At the moment all assets do render processing. move into switch when that's not the case
+    asset.status = .NEEDS_RENDER_PROCESSING
+    queue_push(&state.storage.render_queue, asset)
+    return true
 }
 
 
-process_asset_render :: proc (state: ^EngineState, asset: ^Asset) {
+process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
     fmt.printfln("Process (render) %v", asset.path)
 
     switch asset.type {
@@ -153,5 +200,60 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) {
             asset.wip_shader = tmp
     }
 
+    asset.status = .CAN_BE_RENDERED
+
+    return true
 }
 
+
+// Multiple threads can poll assets and reload them
+process_assets :: proc (state: ^EngineState, thread_type: ThreadType) {
+    storage := &state.storage
+
+    work_start := time.now()
+
+    queue: ^AssetQueue
+    if is_render(thread_type) {
+        queue = &storage.render_queue
+    } else {
+        queue = &storage.main_queue
+    }
+
+    process_attempts := 0
+    asset_to_process: ^Asset
+    for {
+        now := time.now()
+        if time.diff(work_start, now) >= ASSET_TIME_QUANTUM && process_attempts > 0 {
+            if asset_to_process != nil {
+                queue_push(queue, asset_to_process)
+                asset_to_process = nil
+            }
+            break
+        }
+
+        if asset_to_process == nil {
+            asset_to_process = queue_pop(queue)
+            if asset_to_process == nil {
+                break
+            }
+        }
+
+        process_attempts += 1
+
+        start_time := time.now()
+        finished: bool
+        if is_render(thread_type) {
+            finished = process_asset_render(state, asset_to_process)
+            end_time := time.now()
+            asset_to_process.processing_time += time.diff(start_time, end_time)
+        } else {
+            finished = process_asset_main(state, asset_to_process)
+        }
+        
+        if finished {
+            asset_to_process.loaded_time = time.now()
+            fmt.printfln("Loaded asset '%v' %v %v", asset_to_process.path, asset_to_process.processing_time, time.diff(asset_to_process.submit_time, asset_to_process.loaded_time))
+            asset_to_process = nil
+        }
+    }
+}

@@ -13,23 +13,16 @@ import "../driver"
 import "../util"
 import "../engine"
 
-ThreadType :: enum {
-    UPDATE, // updates entities and more main processing
-    RENDER, // rendering
-    INPUT,  // window creation, input events (would normally be in UPDATE/MAIN thread but Windows blocks on window resize so we use a separate thread)
-    WORKER, // general independent worker, IO task or read asset data, process vertex data, AI pathfinding, some networking stuff?
-}
-
 @(export)
 driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, data: ^driver.DriverData) {
     if event != driver.EventKind.EVENT_TICK {
-        fmt.println("EVENT ", event, event_data, data)
+        fmt.println("EVENT ", event)
     }
 
     switch event {
         case .EVENT_START:
             event_data.user_data = new(GameState)
-            event_data.user_index = cast(int)ThreadType.UPDATE
+            event_data.user_index = cast(int)engine.ThreadType.UPDATE
             data.user_data = event_data.user_data
             game_state := cast(^GameState)event_data.user_data
             game_state.engine.running = true
@@ -40,33 +33,30 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
             game_state.engine.startTime = time.now()
             update_init(game_state)
             
+            // @TODO Improve thread driver hot reload situation.
+            //   We want to support network threads.
+            // @TODO I HAVE HARDCODED data.active_thread in driver main.odin. Fix it when adding new threads.
             {
                 thr := thread.create(data.thread_main)
                 thr.data = data
-                thr.user_index = cast(int)ThreadType.RENDER
+                thr.user_index = cast(int)engine.ThreadType.INPUT
                 append(&data.threads, thr)
                 thread.start(thr)
             }
             {
                 thr := thread.create(data.thread_main)
                 thr.data = data
-                thr.user_index = cast(int)ThreadType.INPUT
+                thr.user_index = cast(int)engine.ThreadType.RENDER_0
                 append(&data.threads, thr)
                 thread.start(thr)
             }
             {
                 thr := thread.create(data.thread_main)
                 thr.data = data
-                thr.user_index = cast(int)ThreadType.WORKER
+                thr.user_index = cast(int)engine.ThreadType.WORKER_0
                 append(&data.threads, thr)
                 thread.start(thr)
             }
-            
-            // @TODO Make thread pool
-            // thr := thread.create(data.thread_main)
-            // thr.data = data
-            // thr.user_index = cast(int)ThreadType.WORKER
-            // append(&data.threads, thr)
 
         case .EVENT_STOP:
             // TODO: cleanup
@@ -81,29 +71,27 @@ driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, da
 
         case .EVENT_TICK:
             game_state := cast(^GameState)event_data.user_data
-            thread_type := cast(ThreadType)event_data.user_index
+            thread_type := cast(engine.ThreadType)event_data.user_index
 
-            switch thread_type {
+            #partial switch thread_type {
                 case .UPDATE:
                     tick(game_state)
                     data.running = game_state.engine.running
-                case .RENDER:
-                    tick_render(game_state)
                 case .INPUT:
                     tick_input(game_state)
-                case .WORKER:
-                    tick_worker(game_state)
+                case .RENDER_0..<.RENDER_MAX:
+                    tick_render(game_state, thread_type)
+                case .WORKER_0..<.WORKER_MAX:
+                    tick_worker(game_state, thread_type)
             }
 
     }
 }
 
 
-tick_render :: proc (state: ^GameState) {
+tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
     engine_state := &state.engine
     storage := &state.engine.storage
-
-    work_start := time.now()
 
     if engine_state.render_state.window == nil {
         // window not initialized by input thread yet
@@ -120,43 +108,7 @@ tick_render :: proc (state: ^GameState) {
         engine.set_opengl_globals()
     }
 
-    ASSET_RELOAD_TIME :: 500 * time.Millisecond
-    time_quantum :: 10 * time.Millisecond
-
-    // Multiple threads can poll assets and reload them
-    processed_assets := 0
-    for {
-        now := time.now()
-        if time.diff(work_start, now) >= time_quantum && processed_assets > 0 {
-            break
-        }
-
-        asset_to_process: ^engine.Asset
-        {
-            sync.mutex_lock(&storage.scheduled_render_mutex)
-            defer sync.mutex_unlock(&storage.scheduled_render_mutex)
-
-            for i:=len(storage.scheduled_render)-1; i>=0; i-=1 {
-                asset := storage.scheduled_render[i]
-                diff := time.diff(asset.scheduled_time, now)
-                if diff > ASSET_RELOAD_TIME {
-                    asset_to_process = asset
-                    unordered_remove(&storage.scheduled_render, i)
-                    break
-                }
-            }
-
-            if asset_to_process == nil {
-                break
-            }
-        }
-
-        engine.process_asset_render(engine_state, asset_to_process)
-        processed_assets += 1
-        fmt.printfln("Loaded asset '%v'", asset_to_process.path)
-
-        asset_to_process.status = .CAN_BE_RENDERED
-    }
+    engine.process_assets(&state.engine, thread_type)
 
     player := engine.get_entity(engine_state, state.player_index)
     // state.render_state.camera_position = player.pos
@@ -181,78 +133,30 @@ tick_input :: proc (state: ^GameState) {
     // fmt.println("spam2")
     glfw.PollEvents()
 
-    time.sleep(1 * time.Millisecond)
+    time.sleep(5 * time.Millisecond)
 }
 
-tick_worker :: proc (state: ^GameState) {
+tick_worker :: proc (state: ^GameState, thread_type: engine.ThreadType) {
     engine_state := &state.engine
     storage := &state.engine.storage
 
-    work_start := time.now()
+    if thread_type == .WORKER_0 {
+        // Only one worker can poll events (because watcher has two event lists it switches between, one for user to read, one for watcher thread to write)
+        events := util.watcher_poll(&storage.art_watcher)
+        for e in events {
+            fmt.printfln("%v", e)
+            // @TODO Wait with reloading, blender modifies the file multiple times when exporting.
+            rel_path := strings.concatenate({storage.art_watcher.root, "/", e.path}, context.temp_allocator)
 
-    // fmt.println("spam")
-
-    events := util.watcher_poll(&storage.art_watcher)
-
-    // Only one worker needs to poll watcher
-
-    for e in events {
-        fmt.printfln("%v", e)
-        // @TODO Wait with reloading, blender modifies the file multiple times when exporting.
-        rel_path := strings.concatenate({storage.art_watcher.root, "/", e.path}, context.temp_allocator)
-
-        asset := engine.find_asset_by_src(storage, rel_path)
-        fmt.printfln("Hello %v %v", rel_path, asset)
-        if asset != nil && engine.can_be_reloaded(asset) {
-            engine.reload_asset(engine_state, asset)
+            asset := engine.find_asset_by_src(storage, rel_path)
+            // fmt.printfln("Hello %v %v", rel_path, asset)
+            if asset != nil && engine.can_be_reloaded(asset) {
+                engine.reload_asset(engine_state, asset, time.now())
+            }
         }
     }
 
-    // @TODO Some way to trigger schedule reload manually?
-    //   CLI command maybe? console in the game?
-
-    ASSET_RELOAD_TIME :: 500 * time.Millisecond
-
-    time_quantum :: 10 * time.Millisecond
-
-
-    // Multiple threads can poll assets and reload them
-    processed_assets := 0
-    for {
-        now := time.now()
-        if time.diff(work_start, now) >= time_quantum && processed_assets > 0 {
-            break
-        }
-
-        asset_to_process: ^engine.Asset
-        {
-            sync.mutex_lock(&storage.scheduled_main_mutex)
-            defer sync.mutex_unlock(&storage.scheduled_main_mutex)
-
-            for i:=len(storage.scheduled_main)-1; i>=0; i-=1 {
-                asset := storage.scheduled_main[i]
-                diff := time.diff(asset.scheduled_time, now)
-                if diff > ASSET_RELOAD_TIME {
-                    asset_to_process = asset
-                    unordered_remove(&storage.scheduled_main, i)
-                    break
-                }
-            }
-
-            if asset_to_process == nil {
-                break
-            }
-        }
-
-        engine.process_asset_main(engine_state, asset_to_process)
-        processed_assets += 1
-
-        asset_to_process.status = .NEEDS_RENDER_PROCESSING
-        sync.lock(&storage.scheduled_render_mutex)
-        append(&storage.scheduled_render, asset_to_process)
-        sync.unlock(&storage.scheduled_render_mutex)
-    }
-
+    engine.process_assets(&state.engine, thread_type)
 
     time.sleep(1 * time.Millisecond)
 }
@@ -263,6 +167,7 @@ tick :: proc (state: ^GameState) {
         // last_time is zero first tick
         engine_state.lastTime = time.now()
     }
+    // fmt.println("sdad?")
 
     now := time.now()
     engine_state.delta = cast(f32)(time.time_to_unix_nano(now) - time.time_to_unix_nano(engine_state.lastTime)) / 1.0e9

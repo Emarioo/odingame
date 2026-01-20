@@ -33,18 +33,18 @@ main :: proc () {
 
     fresh_lib_path : string 
     temp_lib_path  : string
-    temp2_lib_path  : string
+    tempfirst_lib_path  : string
     when ODIN_OS == .Linux {
         fresh_lib_path  = filepath.join([]string{ exe_dir, "/libgame_code.so" })
         temp_lib_path   = filepath.join([]string{ exe_dir, "/lib_game_code.so"  })
-        temp2_lib_path  = filepath.join([]string{ exe_dir, "/lib_2game_code.so"  })
+        tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/lib_fgame_code.so"  })
         
         permanent_library_load("libglfw.so")
         permanent_library_load("libGL.so")
     } else {
         fresh_lib_path  = filepath.join([]string{ exe_dir, "/game_code.dll" })
         temp_lib_path   = filepath.join([]string{ exe_dir, "/_game_code.dll"  })
-        temp2_lib_path  = filepath.join([]string{ exe_dir, "/_2game_code.dll"  })
+        tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/_fgame_code.dll"  })
 
         // Load dynamic libraries game_code dll depends on so that they don't get unloaded
         // when game code is unloaded. We could move this to engine or game code if we wish.
@@ -66,19 +66,19 @@ main :: proc () {
     data.game_directory = exe_dir
 
     if ENABLE_HOTRELOAD {
-        copy_file(fresh_lib_path, temp_lib_path)
+        copy_file(fresh_lib_path, tempfirst_lib_path)
 
-        library, ok = dynlib.load_library(temp_lib_path)
+        library, ok = dynlib.load_library(tempfirst_lib_path)
         if !ok {
             fmt.println(library)
             fmt.eprintln(dynlib.last_error())
-            fmt.println("Could not load library", temp_lib_path)
+            fmt.println("Could not load library", tempfirst_lib_path)
             os.exit(1)
         }
         
         address, ok = dynlib.symbol_address(library, "driver_event")
         if !ok {
-            fmt.println("Could not find 'driver_event' in", temp_lib_path)
+            fmt.println("Could not find 'driver_event' in", tempfirst_lib_path)
             os.exit(1)
         }
         data.driver_event = cast(proc(event: EventKind, event_data: ^EventData, data: ^DriverData)) address
@@ -98,7 +98,7 @@ main :: proc () {
     data.driver_event(EventKind.EVENT_LOAD, &event_data, &data)
     data.driver_event(EventKind.EVENT_START, &event_data, &data)
 
-    keep_first_game_code := true
+    keep_game_dll := true
     {
         // Watcher (with its threads) has to be started in non-reloadable code which is the driver.
         // Network threads will also need this.
@@ -112,15 +112,17 @@ main :: proc () {
         // With this approach we don't have to have game specific code in the driver.
     }
 
+    data.active_threads = 3 // @TODO DO NOT HARDCODE THREAD COUNT
+
     // TODO: What about multiple threads?
     for data.running {
 
         // Detect reload of dll
         if ENABLE_HOTRELOAD {
             now := time.now()
-            reload_ms :: 500
+            reload_ms :: 500 * time.Millisecond
             // Check if dynamic library was rebuilt every 500ms
-            if time.time_to_unix_nano(now)/1000000 - reload_ms > time.time_to_unix_nano(last_timestamp_check)/1000000 {
+            if time.diff(last_timestamp_check, now) > reload_ms {
                 last_timestamp_check = now
                 file_info, error = os.stat(fresh_lib_path)
                 defer os.file_info_delete(file_info)
@@ -142,15 +144,17 @@ main :: proc () {
                     
                     data.driver_event(EventKind.EVENT_UNLOAD, &event_data, &data)
 
-                    if !keep_first_game_code {
+                    if !keep_game_dll {
                         ok = dynlib.unload_library(library)
                         if !ok {
                             fmt.println("Could not unload library", temp_lib_path)
                             os.exit(1)
                         }
                     } else {
-                        keep_first_game_code = true
-                        temp_lib_path = temp2_lib_path
+                        // Only keep first game dll (it creates file watchers threads which will keep executing valid code since we don't invalidate the old dll)
+                        // For network threads we need some other solution since they may be created after the first dll was replaced.
+                        // Subseque
+                        keep_game_dll = false
                     }
 
                     copy_file(fresh_lib_path, temp_lib_path)
@@ -173,6 +177,8 @@ main :: proc () {
                     // Send signal to other thread saying STOP STALL, KEEP SENDING TICK EVENTS
                     sync.atomic_store(&data.reload_requested, false)
                     sync.cond_broadcast(&data.cond)
+                } else {
+                    // game code dll is not newer or doesn't exist
                 }
             }
         }

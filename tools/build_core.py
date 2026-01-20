@@ -82,7 +82,7 @@ def game_is_running():
 
 def compile_game(options: Options):
     
-    if game_is_running():
+    if game_is_running() and not options.hotreload:
         print("Game is running, hot reloading instead")
         options.hotreload = True
 
@@ -117,11 +117,12 @@ def compile_game(options: Options):
         # game_odin_flags += f" -pdb-name:game_code-{timestamp}.pdb"
         game_odin_flags += f" -pdb-name:{options.release_path}/game_code-{timestamp}.pdb"
 
-        glfw_path = f"{odin_path}vendor\\glfw\\lib\\glfw3.dll"
-        try:
-            shutil.copy(glfw_path, f"{options.release_path}/glfw3.dll")
-        except:
-                pass # we assume dll is in use
+        if not options.hotreload:
+            glfw_path = f"{odin_path}vendor\\glfw\\lib\\glfw3.dll"
+            try:
+                shutil.copy(glfw_path, f"{options.release_path}/glfw3.dll")
+            except:
+                    pass # we assume dll is in use
         # cgltf_path_dll = glob.glob(f"{ROOT}/lib/cgltf/{OS}/shared/cgltf.dll")
         # if len(cgltf_path_dll) > 0:
         #     cgltf_path = cgltf_path_dll[0]
@@ -148,25 +149,33 @@ def compile_game(options: Options):
         # except:
         #         pass # we assume dll is in use
 
-    if not options.package:
-        # Instead of copying all assets to release folder we make a symlink. This way we won't accidently
-        # edit temporary shaders in the release folder. The single source of truth will be odingame/assets.
-        if OS == "windows":
-            dst = f"{options.release_path.replace('/','\\')}\\assets"
-            if not os.path.exists(dst):
-                os.system(f"mklink /J {dst} {REPO_ROOT.replace('/','\\')}\\assets")
+    if not options.hotreload:
+        # @TODO If we switch between package and not then we want to wipe the release folder to ensure no
+        #    symlinks or other trash stays behind.
+        if not options.package:
+            # Instead of copying all assets to release folder we make symlinks. This way we won't accidently
+            # edit temporary shaders in the release folder. The single source of truth will be odingame/assets.
+            if OS == "windows":
+                dst = f"{options.release_path.replace('/','\\')}\\assets"
+                if not os.path.exists(dst):
+                    os.system(f"mklink /J {dst} {REPO_ROOT.replace('/','\\')}\\assets")
+            else:
+                os.symlink(f"{REPO_ROOT}/assets", f"{options.release_path}/assets", target_is_directory=True)
         else:
-            os.symlink(f"{REPO_ROOT}/assets", f"{options.release_path}/assets", target_is_directory=True)
-    else:
-        # @TODO Clean the release directory and package into zip file, based on target (.tar.gz for linux, .zip for windows)
-        #    Always clean directory to get rid of garbage.
-        print("@TODO Implement build.py package")
+            # @TODO Clean the release directory and package into zip file, based on target (.tar.gz for linux, .zip for windows)
+            #    Always clean directory to get rid of garbage.
+            print("@TODO Implement build.py package")
 
     run(f"odin build src/game {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
 
     if not options.hotreload:
-        run(f"odin {'run' if options.run else 'build'} src/driver {'-keep-executable' if options.run else ''} {driver_odin_flags} -out:{game_exe}")
-
+        # run(f"odin {'run' if options.run else 'build'} src/driver {'-keep-executable' if options.run else ''} {driver_odin_flags} -out:{game_exe}")
+        run(f"odin build src/driver {driver_odin_flags} -out:{game_exe}")
+        if options.run:
+            if OS == "windows":
+                run(f"{game_exe.replace('/','\\')}")
+            else:
+                run(f"{game_exe}")
 
 
 def get_odin_root():
