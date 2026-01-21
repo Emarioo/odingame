@@ -224,8 +224,8 @@ load_model_render :: proc (model: ^Model) {
 
         gl.BindVertexArray(mesh.vao)
 
-        start := time.now()
 
+        start := time.now()
         gl.BindBuffer(gl.ARRAY_BUFFER, mesh.vbo)
         gl.BufferData(gl.ARRAY_BUFFER, len(mesh.vertex_data) * size_of(f32), raw_data(mesh.vertex_data), gl.STATIC_DRAW)
 
@@ -246,8 +246,8 @@ load_model_render :: proc (model: ^Model) {
         gl.BindVertexArray(0)
 
         init_texture_render(&mesh.material.base_texture)
-
         end := time.now()
+
         
         fmt.printfln("%v", time.diff(start, end))
         

@@ -29,9 +29,30 @@ to figure out the problem.
 Reload on change
 
 
+## Efficient and stutter-free asset processing.
+
+In the game we have a list of assets (models, shaders, textures).
+
+At startup we register new assets from a path to the file. player model, ui shader, texture for background in main menu. Assets that we always want loaded.
+
+In gameplay when joining a world, rentering a biome we register relevant assets that we don't have and unload assets we don't need anymore.
+
+If the assets are updated on disc, then we will automatically reload the asset.
+
+To use the assets they need to be converted from file format (.glb, .png, .glsl) to objects in the GPU. This requires processing (File IO, CPU computation on worker thread, GPU calls on render thread).
+
+During processing we will allocate memory and gpu objects for the data we get from the file format. Some of this memory and some GPU objects may be intermediate and temporary and not needed for the final asset. For example when we reload a model it will have two mesh objects. One for the current that we are rendering and one for the one that we are processing. Without old mesh object any entity that uses the asset would not have any mesh object to render while it's processing.
+
+To achieve efficient processing without stutters we need to keep old gpu objects for some time and reuse memory and buffers.
 
 
 
+**Resources**
+https://www.songho.ca/opengl/gl_pbo.html
+
+## From testing
+
+Allocating a buffer object (texture or vertex or indices) with nullptr as data takes some time but doing it with data to copy over takes more time.
 
 
 
@@ -59,4 +80,3 @@ main :: proc () {
 }
 
 ```
-

@@ -8,9 +8,9 @@ import "core:path/filepath"
 import "../util"
 
 AssetStatus :: enum {
+    READY,
     NEEDS_MAIN_PROCESSING,
     NEEDS_RENDER_PROCESSING,
-    CAN_BE_RENDERED,
 }
 
 AssetType :: enum {
@@ -116,7 +116,7 @@ register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Ass
 }
 
 can_be_reloaded :: proc (asset: ^Asset) -> bool {
-    return asset.status == .CAN_BE_RENDERED
+    return asset.status == .READY
 }
 
 
@@ -135,7 +135,7 @@ find_asset_by_src :: proc (storage: ^AssetStorage, path: string) -> ^Asset {
 reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.Time = time.Time{0}) {
     // Here we assume two threads can't reload an asset at the same time.
     // Race condition if this happens.
-    if asset.status != .CAN_BE_RENDERED {
+    if asset.status != .READY {
         fmt.printfln("Submit reload (already reloading) %v from %v", asset.name, asset.path)
         return
     }
@@ -200,7 +200,7 @@ process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
             asset.wip_shader = tmp
     }
 
-    asset.status = .CAN_BE_RENDERED
+    asset.status = .READY
 
     return true
 }
