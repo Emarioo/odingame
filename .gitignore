@@ -12,6 +12,9 @@ assets/models
 *.blend*
 !*.blend
 
+*.kra~
+*.spv
+
 # Builds, release and dev
 releases
 
