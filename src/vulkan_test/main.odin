@@ -11,6 +11,7 @@ import "core:time"
 import "core:os"
 import "core:dynlib"
 import "base:runtime"
+import "core:c"
 
 import vk "vendor:vulkan"
 import "vendor:glfw"
@@ -59,6 +60,8 @@ State :: struct {
     sem_imageAvailable: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
     sem_renderFinished: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
     fence_inFlight: [MAX_FRAMES_IN_FLIGHT]vk.Fence,
+
+    frame_resized: bool,
 }
 
 check_error :: proc (err: vk.Result, msg: string) {
@@ -76,7 +79,7 @@ main :: proc () {
     glfw.Init()
     
     glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API);
-    glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE);
+    // glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE);
     
     state.width = 800
     state.height = 600
@@ -84,6 +87,8 @@ main :: proc () {
     
     glfw.SetWindowUserPointer(state.window, &state)
     glfw.SwapInterval(0)
+
+    glfw.SetFramebufferSizeCallback(state.window, FrameBufferResize)
 
     // @TODO Find linux lib
     path := "vulkan-1.dll"
@@ -139,10 +144,13 @@ main :: proc () {
 
     pick_device(&state)
 
+    load_shader(&state)
+
     // @TODO Calculate extent from capabilities. in case capabilities.currentExtend.width is MAXUINT?
     create_swapchain(&state)
+    
 
-    load_shader(&state)
+
 
     {
         sem_info : vk.SemaphoreCreateInfo = {
@@ -171,10 +179,17 @@ main :: proc () {
         glfw.PollEvents()
 
         vk.WaitForFences(state.device, 1, &state.fence_inFlight[currentFrame], true, cast(u64)-1)
-        vk.ResetFences(state.device, 1, &state.fence_inFlight[currentFrame])
 
         imageIndex: u32
-        vk.AcquireNextImageKHR(state.device, state.swapchain, cast(u64)-1, state.sem_imageAvailable[currentFrame], 0, &imageIndex)
+        res = vk.AcquireNextImageKHR(state.device, state.swapchain, cast(u64)-1, state.sem_imageAvailable[currentFrame], 0, &imageIndex)
+        if res == .ERROR_OUT_OF_DATE_KHR {
+            fmt.println("Resized1")
+            recreate_swapchain(&state)
+            continue
+        } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
+            check_error(res, "failed acquire next image")
+        }
+        vk.ResetFences(state.device, 1, &state.fence_inFlight[currentFrame])
 
         vk.ResetCommandBuffer(state.commandBuffers[currentFrame], {})
 
@@ -206,39 +221,49 @@ main :: proc () {
         }
 
         // @TODO Present and graphics queue are assumed to be the same. (a problem?)
-        vk.QueuePresentKHR(state.graphicsQueue, &presentInfo)
+        res = vk.QueuePresentKHR(state.graphicsQueue, &presentInfo)
+        if res == .ERROR_OUT_OF_DATE_KHR || state.frame_resized {
+            // @TODO I don't think the resize is working. The triangle looks pixelated when scaled up.
+            //   Do we render once and then continously fail? try make moving triangle to see if we render.
+            fmt.println("Resized")
+            state.frame_resized = false
+            recreate_swapchain(&state)
+        } else if (res != .SUCCESS && res != .SUBOPTIMAL_KHR) {
+            check_error(res, "failed acquire next image")
+        }
+
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT
 
         time.sleep(1 * time.Millisecond)
 
-        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT
     }
 
     vk.DeviceWaitIdle(state.device)
-    
-    // @TODO Destroy array of these properly
-    // vk.DestroySemaphore(state.device, state.sem_imageAvailable, nil)
-    // vk.DestroySemaphore(state.device, state.sem_renderFinished, nil)
-    // vk.DestroyFence(state.device, state.fence_inFlight, nil)
 
     vk.DestroyCommandPool(state.device, state.commandPool, nil)
 
     for framebuffer in state.swapchainFramebuffers {
         vk.DestroyFramebuffer(state.device, framebuffer, nil)
     }
-
-    vk.DestroyPipeline(state.device, state.graphicsPipeline, nil)
-
-    vk.DestroyPipelineLayout(state.device, state.pipelineLayout, nil)
-    vk.DestroyRenderPass(state.device, state.renderPass, nil)
-
-    vk.DestroyShaderModule(state.device, state.vert_shader, nil)
-    vk.DestroyShaderModule(state.device, state.frag_shader, nil)
-
     for image in state.imageViews {
         vk.DestroyImageView(state.device, image, nil)
     }
     // @TODO Destroy images?
     vk.DestroySwapchainKHR(state.device, state.swapchain, nil)
+
+    vk.DestroyPipeline(state.device, state.graphicsPipeline, nil)
+    vk.DestroyPipelineLayout(state.device, state.pipelineLayout, nil)
+
+    vk.DestroyRenderPass(state.device, state.renderPass, nil)
+    
+    // @TODO Destroy array of these properly
+    // vk.DestroySemaphore(state.device, state.sem_imageAvailable, nil)
+    // vk.DestroySemaphore(state.device, state.sem_renderFinished, nil)
+    // vk.DestroyFence(state.device, state.fence_inFlight, nil)
+
+    vk.DestroyShaderModule(state.device, state.vert_shader, nil)
+    vk.DestroyShaderModule(state.device, state.frag_shader, nil)
+
     vk.DestroyDevice(state.device, nil)
     vk.DestroySurfaceKHR(state.instance, state.surface, nil)
     vk.DestroyInstance(state.instance, nil)
@@ -248,6 +273,11 @@ main :: proc () {
     fmt.println("Finish");
 }
 
+FrameBufferResize :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
+    state := cast(^State)glfw.GetWindowUserPointer(window)
+
+    state.frame_resized = true
+}
 
 load_shader :: proc (state: ^State) {
     res: vk.Result
@@ -474,24 +504,6 @@ load_shader :: proc (state: ^State) {
     res = vk.CreateGraphicsPipelines(state.device, 0, 1, &pipelineInfo, nil, &state.graphicsPipeline)
     check_error(res, "Failed creating graphics pipeline")
 
-    state.swapchainFramebuffers = make([]vk.Framebuffer, len(state.imageViews))
-    for view, i in state.imageViews {
-        attachments: []vk.ImageView = {
-            view
-        }
-        framebufferInfo: vk.FramebufferCreateInfo = {
-            sType = .FRAMEBUFFER_CREATE_INFO,
-            renderPass = state.renderPass,
-            attachmentCount = 1,
-            pAttachments = &attachments[0],
-            width = state.extent.width,
-            height = state.extent.height,
-            layers = 1,
-        }
-
-        res = vk.CreateFramebuffer(state.device, &framebufferInfo, nil, &state.swapchainFramebuffers[i])
-        check_error(res, "failed to create framebuffer!")
-    }
      
     poolInfo: vk.CommandPoolCreateInfo = {
         sType = .COMMAND_POOL_CREATE_INFO,
@@ -568,6 +580,26 @@ record_command_buffer :: proc (state: ^State, commandBuffer: vk.CommandBuffer, i
     check_error(res, "failed to record command buffer")
 }
 
+recreate_swapchain :: proc (state: ^State) {
+    // @TODO Handle minimize window, https://vulkan-tutorial.com/Drawing_a_triangle/Swap_chain_recreation
+
+    vk.DeviceWaitIdle(state.device);
+
+    // cleanup swapchain
+
+    for framebuffer in state.swapchainFramebuffers {
+        vk.DestroyFramebuffer(state.device, framebuffer, nil)
+    }
+    for image in state.imageViews {
+        vk.DestroyImageView(state.device, image, nil)
+    }
+    vk.DestroySwapchainKHR(state.device, state.swapchain, nil)
+
+    // make swapchain
+    
+    create_swapchain(state)
+}
+
 create_swapchain :: proc (state: ^State) {
     res: vk.Result
     state.imageCount = state.capabilities.minImageCount + 1
@@ -639,6 +671,24 @@ create_swapchain :: proc (state: ^State) {
 
     }
 
+    state.swapchainFramebuffers = make([]vk.Framebuffer, len(state.imageViews))
+    for view, i in state.imageViews {
+        attachments: []vk.ImageView = {
+            view
+        }
+        framebufferInfo: vk.FramebufferCreateInfo = {
+            sType = .FRAMEBUFFER_CREATE_INFO,
+            renderPass = state.renderPass,
+            attachmentCount = 1,
+            pAttachments = &attachments[0],
+            width = state.extent.width,
+            height = state.extent.height,
+            layers = 1,
+        }
+
+        res = vk.CreateFramebuffer(state.device, &framebufferInfo, nil, &state.swapchainFramebuffers[i])
+        check_error(res, "failed to create framebuffer!")
+    }
 }
 
 pick_device :: proc (state: ^State) {
