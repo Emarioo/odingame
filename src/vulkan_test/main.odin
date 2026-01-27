@@ -17,6 +17,7 @@ import "vendor:glfw"
 
 import "shaderc"
 
+MAX_FRAMES_IN_FLIGHT :: 2
 
 State :: struct {
     window: glfw.WindowHandle,
@@ -53,11 +54,11 @@ State :: struct {
     graphicsPipeline: vk.Pipeline,
 
     commandPool: vk.CommandPool,
-    commandBuffer: vk.CommandBuffer,
+    commandBuffers: [MAX_FRAMES_IN_FLIGHT]vk.CommandBuffer,
 
-    sem_imageAvailable: vk.Semaphore,
-    sem_renderFinished: vk.Semaphore,
-    fence_inFlight: vk.Fence,
+    sem_imageAvailable: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
+    sem_renderFinished: [MAX_FRAMES_IN_FLIGHT]vk.Semaphore,
+    fence_inFlight: [MAX_FRAMES_IN_FLIGHT]vk.Fence,
 }
 
 check_error :: proc (err: vk.Result, msg: string) {
@@ -151,50 +152,53 @@ main :: proc () {
             sType = .FENCE_CREATE_INFO,
             flags = { .SIGNALED },
         }
-        res = vk.CreateSemaphore(state.device, &sem_info, nil, &state.sem_imageAvailable)
-        check_error(res, "sem failed1")
-        res = vk.CreateSemaphore(state.device, &sem_info, nil, &state.sem_renderFinished)
-        check_error(res, "sem failed2")
-        res = vk.CreateFence(state.device, &fence_info, nil, &state.fence_inFlight)
-        check_error(res, "fence failed")
+        for i in 0..<MAX_FRAMES_IN_FLIGHT {
+            res = vk.CreateSemaphore(state.device, &sem_info, nil, &state.sem_imageAvailable[i])
+            check_error(res, "sem failed1")
+            res = vk.CreateSemaphore(state.device, &sem_info, nil, &state.sem_renderFinished[i])
+            check_error(res, "sem failed2")
+            res = vk.CreateFence(state.device, &fence_info, nil, &state.fence_inFlight[i])
+            check_error(res, "fence failed")
+        }
     }
 
     // fmt.println("Capabilities", state.capabilities)
     // fmt.println("Formats", state.formats)
     // fmt.println("Modes", state.presentModes)
 
+    currentFrame : u32
     for !glfw.WindowShouldClose(state.window) {
         glfw.PollEvents()
 
-        vk.WaitForFences(state.device, 1, &state.fence_inFlight, true, cast(u64)-1)
-        vk.ResetFences(state.device, 1, &state.fence_inFlight)
+        vk.WaitForFences(state.device, 1, &state.fence_inFlight[currentFrame], true, cast(u64)-1)
+        vk.ResetFences(state.device, 1, &state.fence_inFlight[currentFrame])
 
         imageIndex: u32
-        vk.AcquireNextImageKHR(state.device, state.swapchain, cast(u64)-1, state.sem_imageAvailable, 0, &imageIndex)
+        vk.AcquireNextImageKHR(state.device, state.swapchain, cast(u64)-1, state.sem_imageAvailable[currentFrame], 0, &imageIndex)
 
-        vk.ResetCommandBuffer(state.commandBuffer, {})
+        vk.ResetCommandBuffer(state.commandBuffers[currentFrame], {})
 
-        record_command_buffer(&state, state.commandBuffer, imageIndex)
+        record_command_buffer(&state, state.commandBuffers[currentFrame], imageIndex)
 
         waitStages: [1]vk.PipelineStageFlags = { { .COLOR_ATTACHMENT_OUTPUT } }
         submitInfo: vk.SubmitInfo = {
             sType = .SUBMIT_INFO,
             waitSemaphoreCount = 1,
-            pWaitSemaphores = &state.sem_imageAvailable,
+            pWaitSemaphores = &state.sem_imageAvailable[currentFrame],
             pWaitDstStageMask = &waitStages[0],
             commandBufferCount = 1,
-            pCommandBuffers = &state.commandBuffer,
+            pCommandBuffers = &state.commandBuffers[currentFrame],
             signalSemaphoreCount = 1,
-            pSignalSemaphores = &state.sem_renderFinished,
+            pSignalSemaphores = &state.sem_renderFinished[currentFrame],
         }
 
-        res = vk.QueueSubmit(state.graphicsQueue, 1, &submitInfo, state.fence_inFlight)
+        res = vk.QueueSubmit(state.graphicsQueue, 1, &submitInfo, state.fence_inFlight[currentFrame])
         check_error(res, "failed submit queue")
 
         presentInfo: vk.PresentInfoKHR = {
             sType = .PRESENT_INFO_KHR,
             waitSemaphoreCount = 1,
-            pWaitSemaphores = &state.sem_renderFinished,
+            pWaitSemaphores = &state.sem_renderFinished[currentFrame],
             swapchainCount = 1,
             pSwapchains = &state.swapchain,
             pImageIndices = &imageIndex,
@@ -205,14 +209,16 @@ main :: proc () {
         vk.QueuePresentKHR(state.graphicsQueue, &presentInfo)
 
         time.sleep(1 * time.Millisecond)
+
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT
     }
 
     vk.DeviceWaitIdle(state.device)
     
-
-    vk.DestroySemaphore(state.device, state.sem_imageAvailable, nil)
-    vk.DestroySemaphore(state.device, state.sem_renderFinished, nil)
-    vk.DestroyFence(state.device, state.fence_inFlight, nil)
+    // @TODO Destroy array of these properly
+    // vk.DestroySemaphore(state.device, state.sem_imageAvailable, nil)
+    // vk.DestroySemaphore(state.device, state.sem_renderFinished, nil)
+    // vk.DestroyFence(state.device, state.fence_inFlight, nil)
 
     vk.DestroyCommandPool(state.device, state.commandPool, nil)
 
@@ -500,10 +506,10 @@ load_shader :: proc (state: ^State) {
         sType = .COMMAND_BUFFER_ALLOCATE_INFO,
         commandPool = state.commandPool,
         level = .PRIMARY,
-        commandBufferCount = 1,
+        commandBufferCount = MAX_FRAMES_IN_FLIGHT,
     }
 
-    res = vk.AllocateCommandBuffers(state.device, &allocInfo, &state.commandBuffer)
+    res = vk.AllocateCommandBuffers(state.device, &allocInfo, &state.commandBuffers[0])
     check_error(res, "failed to allocate command buffers!")
 
 }
