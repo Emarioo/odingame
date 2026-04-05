@@ -11,6 +11,7 @@ import "core:strings"
 import "base:runtime"
 
 import "core:sys/linux"
+import "core:sys/posix"
 
 // @TODO Use IN_ONLYDIR
 // @TODO Handle IN_IGNORED
@@ -27,18 +28,45 @@ _watcher_init :: proc (watcher: ^Watcher) -> bool {
     }
     watcher.inotify_instance = cast(i32)inotify_fd
 
-    root_wd: linux.Wd
-    root_wd, err = linux.inotify_add_watch(inotify_fd, strings.unsafe_string_to_cstring(watcher.root), INOTIFY_DEFAULT_EVENT_MASK)
-    if err != .NONE {
-        fmt.printfln("_watcher_init: inotify_init: %v", err)
-        return false
-    }
-
-    watcher.watches[cast(i32)root_wd] = strings.clone(watcher.root)
-
-    // readdir, create watches
+    _watcher_add_path_recursive(watcher, watcher.root)
 
     return true
+}
+
+_watcher_add_path_recursive :: proc (watcher: ^Watcher, path: string) {
+    root_wd, err := linux.inotify_add_watch(cast(linux.Fd)watcher.inotify_instance, strings.unsafe_string_to_cstring(path), INOTIFY_DEFAULT_EVENT_MASK)
+    if err != .NONE {
+        fmt.printfln("_watcher_init: inotify_init: %v", err)
+        return
+    }
+
+    watcher.watches[cast(i32)root_wd] = strings.cut_clone(path, len(watcher.root)+1)
+
+    dir := posix.opendir(strings.unsafe_string_to_cstring(path))
+    if (dir == nil) {
+        return
+    }
+
+    entry: ^posix.dirent
+    for {
+        entry = posix.readdir(dir)
+        if entry == nil {
+            break
+        }
+        name := strings.string_from_null_terminated_ptr(transmute([^]u8)&entry.d_name, cast(int)entry.d_reclen - 19)
+        if (name == "." || name == "..") {
+            continue
+        }
+
+        fullpath := strings.concatenate({path, "/", name})
+
+        st: linux.Stat;
+        if (linux.stat(strings.unsafe_string_to_cstring(fullpath), &st) == .NONE && linux.S_ISDIR(st.mode)) {
+            _watcher_add_path_recursive(watcher, fullpath);
+        }
+    }
+
+    posix.closedir(dir);
 }
 
 
@@ -74,14 +102,8 @@ _watcher_thread_main :: proc (thread: ^thread.Thread) {
         for offset < bytes {
             info := cast(^linux.Inotify_Event) mem.ptr_offset(raw_data(buffer), offset)
             offset += cast(int)size_of(linux.Inotify_Event) + cast(int)info.len
-            err: runtime.Allocator_Error
-            filename: string
-            filename, err = strings.clone(transmute(string) slice.from_ptr(&info.name, cast(int)info.len))
+            filename := strings.string_from_null_terminated_ptr(transmute(^u8)&info.name, cast(int)info.len)
 
-            if err != .None {
-                fmt.printfln("_watcher_thread_main: allocator wstring_to_utf8_alloc", err)
-                continue
-            }
             dir := watcher.watches[cast(i32)info.wd]
             event.path = strings.join({dir, filename}, "/")
 

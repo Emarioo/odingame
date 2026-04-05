@@ -33,7 +33,7 @@ ols.json
 int
 *.o
 *.a
-*.so
+*.so*
 *.out
 
 *.obj
@@ -43,7 +43,6 @@ int
 *.ilk
 *.exp
 *.pdb
-
 *.log
 
 __pycache__

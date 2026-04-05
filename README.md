@@ -1,6 +1,6 @@
 Game made in odin?
 
-![](/docs/img/screenshot-2026-01-18.png)
+![](/docs/thaum/img/screenshot-2026-01-18.png)
 **I DO NOT OWN THE MODEL IN THE IMAGE, it is Iuno from Wuthering Waves**
 
 # Dev features

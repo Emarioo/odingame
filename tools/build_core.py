@@ -4,18 +4,19 @@ import os, sys, subprocess, shlex, platform, shutil, glob, dataclasses, time
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-GAME_NAME = "odingame"
-
 
 @dataclasses.dataclass
 class Options:
     version:      str
     release_path: str
+    game_src:     str
+    project_name: str
     target:       str  = f"{platform.system().lower()}-x86_64"
     hotreload:    bool = False
     run:          bool = False
     use_shared_libraries: bool = True
     package:      bool = False
+
 
 
 def apply_exe_extension(options: Options, path: str):
@@ -65,26 +66,29 @@ def apply_lib_extension(options: Options, path: str):
     else:
         assert False
 
-def game_is_running():
+def game_is_running(name):
     os = platform.system().lower()
     if os == "windows":
         proc = subprocess.run(["tasklist"], text=True,stdout=subprocess.PIPE)
         if proc.returncode:
             print(proc.stdout)
             exit(1)
-        return GAME_NAME in proc.stdout
+        return name in proc.stdout
     elif platform.system() == "linux":
         proc = subprocess.run(["ps", "-A"], text=True,stdout=subprocess.PIPE)
         if proc.returncode:
             print(proc.stdout)
             exit(1)
-        return GAME_NAME in proc.stdout
+        return name in proc.stdout
 
-def compile_game(options: Options):
-    
-    if game_is_running() and not options.hotreload:
+def compile_game(options: Options):    
+    if game_is_running(options.project_name) and not options.hotreload:
         print("Game is running, hot reloading instead")
         options.hotreload = True
+
+    # game_src = "src/game"
+    # prject_name = "odingame"
+
 
     # Ensure intermediate directory exists (where we dump object files)
     # don't need 'int' at the moment
@@ -96,7 +100,7 @@ def compile_game(options: Options):
     odin_path = get_odin_root()
 
 
-    game_exe = apply_exe_extension(options, f"{options.release_path}/{GAME_NAME}")
+    game_exe = apply_exe_extension(options, f"{options.release_path}/{options.project_name}")
     game_code_dll = apply_dll_extension(options, f"{options.release_path}/game_code")
 
     base_odin_flags = f"-debug -o:none"
@@ -156,24 +160,30 @@ def compile_game(options: Options):
             # Instead of copying all assets to release folder we make symlinks. This way we won't accidently
             # edit temporary shaders in the release folder. The single source of truth will be odingame/assets.
             if OS == "windows":
-                dst = f"{options.release_path.replace('/','\\')}\\assets"
+                tmp = '\\'
+                dst = f"{options.release_path.replace('/',tmp)}\\assets"
                 if not os.path.exists(dst):
-                    os.system(f"mklink /J {dst} {REPO_ROOT.replace('/','\\')}\\assets")
+                    os.system(f"mklink /J {dst} {REPO_ROOT.replace('/',tmp)}\\assets")
             else:
-                os.symlink(f"{REPO_ROOT}/assets", f"{options.release_path}/assets", target_is_directory=True)
+                dst = f"{options.release_path}/assets"
+                if not os.path.exists(dst):
+                    os.symlink(f"{REPO_ROOT}/assets", dst, target_is_directory=True)
         else:
             # @TODO Clean the release directory and package into zip file, based on target (.tar.gz for linux, .zip for windows)
             #    Always clean directory to get rid of garbage.
             print("@TODO Implement build.py package")
 
-    run(f"odin build src/game {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
+    # run(f"odin build src/game {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
+
+    run(f"odin build {options.game_src} {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
 
     if not options.hotreload:
         # run(f"odin {'run' if options.run else 'build'} src/driver {'-keep-executable' if options.run else ''} {driver_odin_flags} -out:{game_exe}")
         run(f"odin build src/driver {driver_odin_flags} -out:{game_exe}")
         if options.run:
             if OS == "windows":
-                run(f"{game_exe.replace('/','\\')}")
+                tmp = '\\'
+                run(f"{game_exe.replace('/',tmp)}")
             else:
                 run(f"{game_exe}")
 

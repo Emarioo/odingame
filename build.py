@@ -9,10 +9,21 @@ REPO_ROOT = os.path.dirname(__file__)
 def main():
     VERSION = "0.0.1"
     TARGET = f"{platform.system().lower()}-x86_64"
+
+    # options = build_core.Options(
+    #     version = "0.0.1",
+    #     release_path = f"{REPO_ROOT}/releases/odingame-{VERSION}-{TARGET}",
+    #     game_src = "src/game",
+    #     project_name = "odingame",
+    # )
+    
     options = build_core.Options(
         version = "0.0.1",
-        release_path = f"{REPO_ROOT}/releases/odingame-{VERSION}-{TARGET}",
+        release_path = f"{REPO_ROOT}/releases/orbis-{VERSION}-{TARGET}",
+        game_src = "src/orbis",
+        project_name = "orbis",
     )
+
 
     if "hot" in sys.argv:
         options.hotreload = True

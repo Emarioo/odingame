@@ -1,4 +1,4 @@
-package game
+package orbis
 
 import "core:fmt"
 import "core:time"
@@ -101,6 +101,8 @@ tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
     if !engine_state.has_init_render {
         engine_state.has_init_render = true
         engine.init_render_state(engine_state)
+
+        terrain_init(engine_state, &state.terrain)
     }
     
     if engine_state.reset_opengl_globals {
@@ -114,10 +116,14 @@ tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
     // state.render_state.camera_position = player.pos
     engine_state.render_state.camera_position = player.pos + player.vel * engine_state.accDeltaTime
     engine.render_state(engine_state)
+    
+    render_terrain(&engine_state.render_state, &state.terrain)
 
     engine.render_state_end(engine_state)
 
-    time.sleep(1 * time.Millisecond)
+    // fmt.println("game time: ", time.diff(engine_state.startTime, engine_state.lastTime))
+
+    time.sleep(15 * time.Millisecond)
 }
 
 tick_input :: proc (state: ^GameState) {
@@ -145,7 +151,7 @@ tick_worker :: proc (state: ^GameState, thread_type: engine.ThreadType) {
         // Only one worker can poll events (because watcher has two event lists it switches between, one for user to read, one for watcher thread to write)
         events := util.watcher_poll(&storage.art_watcher)
         for e in events {
-            fmt.printfln("%v", e)
+            // fmt.printfln("%v", e)
             // @TODO Wait with reloading, blender modifies the file multiple times when exporting.
             rel_path := strings.concatenate({storage.art_watcher.root, "/", e.path}, context.temp_allocator)
 
@@ -159,7 +165,7 @@ tick_worker :: proc (state: ^GameState, thread_type: engine.ThreadType) {
 
     engine.process_assets(&state.engine, thread_type)
 
-    time.sleep(1 * time.Millisecond)
+    time.sleep(5 * time.Millisecond)
 }
 
 tick :: proc (state: ^GameState) {
@@ -194,5 +200,5 @@ tick :: proc (state: ^GameState) {
     //     fmt.printfln("fps %v", 1/state.delta)
     // }
 
-    // time.sleep(14 * 1000000)
+    time.sleep(5 * time.Millisecond)
 }

@@ -83,8 +83,8 @@ AssetStorage :: struct {
 }
 
 register_asset_from_store :: proc (state: ^EngineState, name: string, rel_path: string) -> ^Asset {
-    strings.concatenate({state.storage.game_directory, "/assets/", rel_path})
-    return register_asset(state, name, rel_path)
+    fixed := strings.concatenate({state.storage.game_directory, "/assets/", rel_path})
+    return register_asset(state, name, fixed)
 }
 register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Asset {
     fmt.printfln("Register %v", path)

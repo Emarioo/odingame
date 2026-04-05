@@ -88,10 +88,10 @@ render_init_window :: proc (state: ^EngineState) {
 
     glfw.SwapInterval(0)
 
-    render.ui_shader     = register_asset_from_store(state, "ui_shader",     "assets/shaders/ui.glsl")
-    render.object_shader = register_asset_from_store(state, "object_shader", "assets/shaders/object.glsl")
-    render.block_model   = register_asset_from_store(state, "block",         "assets/models/block.glb")
-    render.char_model    = register_asset_from_store(state, "iuno",          "assets/models/character_trim.glb")
+    render.ui_shader     = register_asset_from_store(state, "ui_shader",     "shaders/ui.glsl")
+    render.object_shader = register_asset_from_store(state, "object_shader", "shaders/object.glsl")
+    render.block_model   = register_asset_from_store(state, "block",         "models/block.glb")
+    render.char_model    = register_asset_from_store(state, "iuno",          "models/character_trim.glb")
 
     // @IMPORTANT Set this last, this indicates to render thread that we can now MakeContextCurrent and do gl calls
     render.window = window
@@ -248,7 +248,8 @@ load_shader :: proc (path : string, shader: ^Shader) {
     shader.program, ok = gl.load_shaders_source(vertex_text, fragment_text)
     if !ok {
         fmt.eprintln("Failed loading shaders from", path)
-        os.exit(1)
+        return
+        // os.exit(1)
     }
     shader.uniforms = gl.get_uniforms_from_program(shader.program)
 
@@ -404,7 +405,7 @@ render_state :: proc (state: ^EngineState) {
     // render_model(state, render.block_model, Vector3f32{ -3, 0, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, 0, 3 })
     // render_model(state, render.block_model, vec3{ 0, 0, -3 })
-    render_model(state, render.char_model.model, vec3{ 0, -1, -1 })
+    // render_model(state, render.char_model.model, vec3{ 0, -1, -1 })
     // render_model(state, render.block_model, Vector3f32{ 0, 3, 0 })
     // render_model(state, render.block_model, Vector3f32{ 0, -3, 0 })
 
@@ -413,6 +414,12 @@ render_state :: proc (state: ^EngineState) {
         
     // }
 
+    
+}
+
+
+render_state_end :: proc (state: ^EngineState) {
+    render := &state.render_state
     
     glfw.SwapBuffers(render.window)
 }
@@ -434,8 +441,8 @@ render_model :: proc (state: ^EngineState, model: ^Model, pos: vec3) {
 
     gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)
     gl.UniformMatrix4fv(render.object_shader.shader.uniforms["uProjection"].location, 1, false,  transmute([^]f32) &render.projection)
-    gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
-        render.camera_position.x, render.camera_position.y, render.camera_position.z)
+    // gl.Uniform3f(render.object_shader.shader.uniforms["uCameraPos"].location,
+        // render.camera_position.x, render.camera_position.y, render.camera_position.z)
 
     for i in 0..<len(model.meshes) {
         mesh := &model.meshes[i]

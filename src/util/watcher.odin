@@ -98,4 +98,3 @@ watcher_poll :: proc (watcher: ^Watcher) -> []WatchEvent {
 watcher_cleanup :: proc (watcher: ^Watcher) {
     _watcher_cleanup(watcher)
 }
-
