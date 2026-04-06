@@ -6,7 +6,7 @@ import "core:time"
 import "core:math/linalg"
 
 import "../engine"
-import "../util"
+import "../engine/util"
 
 GameState :: struct {
     engine: engine.EngineState,

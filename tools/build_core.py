@@ -177,6 +177,9 @@ def compile_game(options: Options):
 
     run(f"odin build {options.game_src} {game_odin_flags}  -build-mode:dynamic -out:{game_code_dll}")
 
+    if options.hotreload:
+        print("FOR HOTRELOADING TO WORK YOU MUST COPY libglfw.so.3 to release directory (where game shared library and executable is)")
+
     if not options.hotreload:
         # run(f"odin {'run' if options.run else 'build'} src/driver {'-keep-executable' if options.run else ''} {driver_odin_flags} -out:{game_exe}")
         run(f"odin build src/driver {driver_odin_flags} -out:{game_exe}")

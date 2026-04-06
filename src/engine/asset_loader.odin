@@ -5,10 +5,11 @@ import "core:fmt"
 import "core:time"
 import "core:sync"
 import "core:path/filepath"
-import "../util"
+import "./util"
 
 AssetStatus :: enum {
     READY,
+    FAILED,
     NEEDS_MAIN_PROCESSING,
     NEEDS_RENDER_PROCESSING,
 }
@@ -116,6 +117,10 @@ register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Ass
 }
 
 can_be_reloaded :: proc (asset: ^Asset) -> bool {
+    return asset.status == .READY || asset.status == .FAILED
+}
+
+can_be_used :: proc (asset: ^Asset) -> bool {
     return asset.status == .READY
 }
 

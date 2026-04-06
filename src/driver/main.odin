@@ -39,8 +39,10 @@ main :: proc () {
         temp_lib_path   = filepath.join([]string{ exe_dir, "/lib_game_code.so"  })
         tempfirst_lib_path  = filepath.join([]string{ exe_dir, "/lib_fgame_code.so"  })
         
-        permanent_library_load("libglfw.so")
-        permanent_library_load("libGL.so")
+        permanent_library_load("libglfw.so.3")
+        // permanent_library_load("libGL.so")
+        // permanent_library_load("glfw")
+        // permanent_library_load("GL")
     } else {
         fresh_lib_path  = filepath.join([]string{ exe_dir, "/game_code.dll" })
         temp_lib_path   = filepath.join([]string{ exe_dir, "/_game_code.dll"  })
@@ -112,7 +114,7 @@ main :: proc () {
         // With this approach we don't have to have game specific code in the driver.
     }
 
-    data.active_threads = 3 // @TODO DO NOT HARDCODE THREAD COUNT
+    // data.active_threads = 3 // @TODO DO NOT HARDCODE THREAD COUNT
 
     // TODO: What about multiple threads?
     for data.running {
@@ -161,8 +163,13 @@ main :: proc () {
                     
                     library, ok = dynlib.load_library(temp_lib_path)
                     if !ok {
-                        fmt.println("Could not load library", temp_lib_path)
-                        os.exit(1)
+                        // Reloaded too fast? try again.
+                        time.sleep(1000 * time.Millisecond)
+                        library, ok = dynlib.load_library(temp_lib_path)
+                        if !ok {
+                            fmt.println("Could not load library", temp_lib_path)
+                            os.exit(1)
+                        }
                     }
                     
                     address, ok = dynlib.symbol_address(library, "driver_event")
@@ -198,6 +205,8 @@ thread_main :: proc (thread: ^thread.Thread) {
     event_data.user_index = thread.user_index
     event_data.user_data  = data.user_data
 
+    sync.atomic_add(&data.active_threads, 1)
+
     for data.running {
 
         // Look for STOP SENDING TICK EVENT AND STALL
@@ -222,6 +231,8 @@ thread_main :: proc (thread: ^thread.Thread) {
 
         data.driver_event(EventKind.EVENT_TICK, &event_data, data)
     }
+
+    sync.atomic_sub(&data.active_threads, 1)
 }
 
 copy_file :: proc(src_path, dst_path: string) -> bool {

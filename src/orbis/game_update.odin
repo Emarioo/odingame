@@ -7,8 +7,8 @@ import "core:math/linalg/glsl"
 import "core:strings"
 import "core:os/os2"
 
-import "../util"
 import "../engine"
+import "../engine/util"
 
 vec2 :: glsl.vec2
 vec3 :: glsl.vec3
@@ -20,7 +20,7 @@ update_init :: proc (state: ^GameState) {
     player, player_index := engine.create_entity(&state.engine)
     state.player_index = player_index
 
-
+    player.pos.y = 2
 
     assets_path := strings.concatenate({state.engine.game_directory, "/assets"})
     util.watcher_init(&state.engine.storage.art_watcher, assets_path)
@@ -29,11 +29,41 @@ update_init :: proc (state: ^GameState) {
     chunk := create_chunk({0,0,0})
     append(&state.terrain.chunks, chunk)
 
-    chunk = create_chunk({-1,-1,0})
+    chunk = create_chunk({-1,0,0})
     append(&state.terrain.chunks, chunk)
 
-    chunk = create_chunk({0,1,-1})
+    chunk = create_chunk({0,0,-1})
     append(&state.terrain.chunks, chunk)
+
+    chunk = create_chunk({1,0,-1})
+    append(&state.terrain.chunks, chunk)
+
+
+    w0 := add_worker(state, {0,1,-3})
+    w1 := add_worker(state, {0,1,-4})
+
+    command: Command
+    command.type = .MOVE
+    command.data.pos = {3,1,-7}
+    add_command(state, w0, command)
+    command.data.pos = {3,1,-6}
+    add_command(state, w0, command)
+    command.data.pos = {4,1,-7}
+    add_command(state, w1, command)
+
+    add_storage(state, {5,1,-5})
+
+    spots: []vec3 = {
+        {7,1,-15},
+        {7,1,-16},
+        {7,1,-17},
+        {8,1,-14},
+        {8,1,-15},
+        {8,1,-16},
+    }
+    for i in 0..<len(spots) {
+        add_mineral(state, spots[i], 10)
+    }
 }
 
 apply_force :: proc (state: ^GameState) {
@@ -174,6 +204,8 @@ update_state :: proc (state: ^GameState) {
     // update positions
 
     // @TODO Move to engine?
+    // @TODO Remove entities from engine?
+    // @TODO Engine only provide some mesh, rendering stuff.
     for i in 0..<state.engine.entities_count {
         ent := &state.engine.entities[i]
         
@@ -185,4 +217,8 @@ update_state :: proc (state: ^GameState) {
         ent.force = {0,0,0}
 
     }
+
+    update_threat(state, state.teamState)
+
+    update_units(state)
 }

@@ -10,8 +10,8 @@ import "vendor:glfw"
 import gl "vendor:OpenGL"
 
 import "../driver"
-import "../util"
 import "../engine"
+import "../engine/util"
 
 @(export)
 driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, data: ^driver.DriverData) {

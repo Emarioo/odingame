@@ -8,8 +8,8 @@ import "core:strings"
 import "core:os/os2"
 
 import "magic"
-import "../util"
 import "../engine"
+import "../engine/util"
 
 vec2 :: glsl.vec2
 vec3 :: glsl.vec3

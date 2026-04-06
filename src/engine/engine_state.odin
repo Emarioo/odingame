@@ -5,7 +5,7 @@ import "core:time"
 // import "core:math/linalg"
 import "core:sync"
 
-import "../util"
+import "./util"
 
 MAX_ENTITIES :: 1024
 

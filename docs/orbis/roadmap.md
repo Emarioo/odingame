@@ -1,4 +1,4 @@
-*Thaum* is a prototype for real time strategy game with one big world instead of a campaign with smaller maps.
+*Orbis* is a prototype for real time strategy game with one big world instead of a campaign with smaller maps.
 
 
 
@@ -15,6 +15,7 @@ Since this is a prototype we are aiming for a Minimal Viable Product. If the gam
 Then we might be on to something.
 
 For the **MVP** we must have
+- A big world (since that's the special)
 - Workers to command
 - Buildings to place
 - Marines to defend and attack
@@ -26,7 +27,7 @@ NPCs reward you if you succeed and punish you if you don't. Perhaps becomes your
 
 Terminolgy has not been established and we will therefore use StarCraft 2 concepts.
 
-A typical playthrough would be akin to the following:
+A typical playthrough would be close to the following:
 
 1. Start game and create a world
 2. Early game
@@ -45,6 +46,8 @@ A typical playthrough would be akin to the following:
    1. Massive attacks on multiple fronts to take out the enemy
    2. Eventually the map is clear of all enemies. At this point you won.
    3. OR on the edges of the map the enemy has massive production of marines which is very hard to break through. They won't move forward though they just stay at the edge.
+
+The theme may be robotic. If so we can use energy as supply to workers and marines. Rather than marines they would be robots with guns?
 
 # Questions to answer:
 Is them map generated or handcrafted. Not sure maybe both.

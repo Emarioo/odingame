@@ -10,8 +10,8 @@ import "vendor:glfw"
 import gl "vendor:OpenGL"
 
 import "../driver"
-import "../util"
 import "../engine"
+import "../engine/util"
 
 @(export)
 driver_event :: proc (event: driver.EventKind, event_data: ^driver.EventData, data: ^driver.DriverData) {
@@ -102,6 +102,7 @@ tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
         engine_state.has_init_render = true
         engine.init_render_state(engine_state)
 
+        render_units_init(state)
         terrain_init(engine_state, &state.terrain)
     }
     
@@ -118,6 +119,8 @@ tick_render :: proc (state: ^GameState, thread_type: engine.ThreadType) {
     engine.render_state(engine_state)
     
     render_terrain(&engine_state.render_state, &state.terrain)
+
+    render_units(state)
 
     engine.render_state_end(engine_state)
 
