@@ -40,16 +40,11 @@ update_init :: proc (state: ^GameState) {
 
 
     w0 := add_worker(state, {0,1,-3})
-    w1 := add_worker(state, {0,1,-4})
+    // w1 := add_worker(state, {0,1,-4})
 
-    command: Command
-    command.type = .MOVE
-    command.data.pos = {3,1,-7}
-    add_command(state, w0, command)
-    command.data.pos = {3,1,-6}
-    add_command(state, w0, command)
-    command.data.pos = {4,1,-7}
-    add_command(state, w1, command)
+    add_command_move(state, w0, {0,1,-16})
+    add_command_move(state, w0, {0,1,-10})
+    // add_command_move(state, w1, {8,1,-17})
 
     add_storage(state, {5,1,-5})
 
@@ -218,7 +213,7 @@ update_state :: proc (state: ^GameState) {
 
     }
 
-    update_threat(state, state.teamState)
+    update_threat(state, &state.teamState)
 
     update_units(state)
 }

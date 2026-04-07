@@ -6,6 +6,8 @@ package orbis
 
 import "../engine"
 
+import "core:fmt"
+
 import container_queue "core:container/queue"
 import "core:math/linalg/glsl"
 import "vendor:glfw"
@@ -27,22 +29,28 @@ import gl "vendor:OpenGL"
 //     force: vec3,
 // }
 
+INVALID_ENTITY_INDEX :: 0xFFFF_FFFF
+
 CommandType :: enum u8 {
     MOVE,
     MINE,
 }
 
+Command_Move :: struct {
+    pos: ivec3,
+}
+
+Command_Mine :: struct {
+    // @TODO Specify whether to mine wood or mineral
+    mine_entity: u32,
+    storage_entity: u32,
+}
+
 Command :: struct {
-    type: CommandType,
-    data : union {
-        struct {
-            pos: ivec3,
-        },
-        struct {
-            // @TODO Specify whether to mine wood or mineral
-            mine_entity: u32,
-            storage_entity: u32,
-        },
+    // type: CommandType,
+    data: union {
+        Command_Move,
+        Command_Mine,
     }
 }
 
@@ -52,11 +60,13 @@ WorkerData :: struct {
     vel: vec3,
     force: vec3,
 
+    mineral_value: u32,
+
     commands: container_queue.Queue(Command),
 }
 
 is_worker_idle :: proc (unit: ^WorkerData) -> bool {
-    return len(unit.commands) == 0
+    return container_queue.len(unit.commands) == 0
 }
 
 MarineData :: struct {
@@ -94,8 +104,28 @@ render_units_init :: proc (state: ^GameState) {
 
 }
 
-add_command :: proc (state: ^GameState, unit: ^$T, command: Command) {
-    push_back(&unit.commands, command)
+add_command_move :: proc (state: ^GameState, unit: ^$T, pos: ivec3) {
+    command: Command
+    command.data = Command_Move{pos}
+    container_queue.push_back(&unit.commands, command)
+}
+
+add_command_mine :: proc (state: ^GameState, unit: ^$T, mine_entity: u32, storage_entity: u32) {
+    command: Command
+    command.data = Command_Mine{mine_entity, storage_entity}
+    container_queue.push_back(&unit.commands, command)
+}
+
+clear_commands :: proc (state: ^GameState, unit: ^$T) {
+    container_queue.clear(&unit.commands, command)
+
+    // We add one command after to reset velocity of entity.
+    // (if we just unit.vel = {} then it may end up between two tiles.
+    //  instead of flooring float position we can just add a command to move
+    //  to current position)
+    command: Command
+    command.data = Command_Move{ivec3{cast(i32)unit.pos.x,cast(i32)unit.pos.y,cast(i32)unit.pos.z}}
+    container_queue.push_back(&unit.commands, command)
 }
 
 update_unit_pos :: proc (state: ^GameState, units: $T, count: u32) {
@@ -108,6 +138,10 @@ update_unit_pos :: proc (state: ^GameState, units: $T, count: u32) {
     }
 }
 
+calculate_force_to_target :: proc (unit: ^WorkerData, target: vec3) {
+
+}
+
 update_units :: proc (state: ^GameState) {
 
     // update_unit_pos(state, &state.workers, state.worker_count)
@@ -116,32 +150,46 @@ update_units :: proc (state: ^GameState) {
     update_unit_pos(state, &state.minerals, state.mineral_count)
 
     for wi in 0..<state.worker_count {
-        unit := &units[wi]
+        unit := &state.workers[wi]
 
 
-        if len(unit.commands) > 0 {
-            command := front_ptr(&unit.commands)
+        if container_queue.len(unit.commands) > 0 {
+            command := container_queue.front_ptr(&unit.commands)
 
-            switch command.type {
-                case .MOVE: {
-                    int_pos := command.data.move.pos
-                    target := vec3{int_pos.x,int_pos.y,int_pos.z}
+            switch _ in command.data {
+                case Command_Move: {
+                    int_pos := command.data.(Command_Move).pos
+                    target := to_vec3(int_pos)
                     diff := target - unit.pos
-                    move_speed: f32 = 0.8
+                    move_speed: f32 = 1.1
 
                     dist := glsl.length(diff)
-                    if dist < move_speed {
-                        unit.force = diff / state.engine.fixedDelta
-                        pop_front(&unit.commands)
-                        command = nil // prevent accidental access to invalid memory
-                    } else {
-                        diff = glsl.normalize(diff)
-                        diff *= move_speed
 
-                        unit.force = diff / state.engine.fixedDelta
+                    if dist < 0.01 {
+                        // We have reached target and must reset velocity
+                        // so we stop moving and also remove command.
+                        unit.force = -unit.vel
+                        container_queue.pop_front(&unit.commands)
+                        command = nil // prevent accidental access to invalid memory
+                    } else if dist < move_speed * state.engine.fixedDelta {
+                        // When within one tick of target move exactly to target position.
+                        // This prevents back and forth stutter.
+                        // We could implement a slow down affect as unit gets closer
+                        // to target, maybe later.
+                        target_vel := diff/state.engine.fixedDelta * move_speed
+                        unit.force = target_vel - unit.vel
+                    } else {
+                        // Move with a specific speed towards target
+                        target_vel := glsl.normalize(diff) * move_speed
+                        unit.force = target_vel - unit.vel
+                        // fmt.println("Force/vel", unit.force, unit.vel)
                     }
                 }
-                case .MINE: {
+                case Command_Mine: {
+
+                    if unit.mineral_value < 3 {
+                        
+                    }
                     // command.mine.mine_entity
                     // command.mine.storage_entity
                 }
@@ -177,7 +225,6 @@ render_units :: proc (state: ^GameState) {
 add_worker :: proc (state: ^GameState, pos: vec3) -> ^WorkerData {
     worker := &state.workers[state.worker_count]
     worker.pos = pos
-    worker.idle = true
     state.worker_count += 1
 
     return worker
@@ -238,7 +285,7 @@ render_mineral :: proc (state: ^GameState, unit: ^MineralData) {
 
     gl.UseProgram(shader.program)
 
-    transform := glsl.mat4Translate(unit.pos) * glsl.mat4Scale({0.4,0.9,0.1})
+    transform := glsl.mat4Translate(unit.pos) * glsl.mat4Scale({0.4,0.9,0.4})
 
 
     gl.UniformMatrix4fv(shader.uniforms["uTransform"].location, 1, false, transmute([^]f32) &transform)

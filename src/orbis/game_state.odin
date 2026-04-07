@@ -31,6 +31,6 @@ GameState :: struct {
     minerals: [MAX_ENTITY]MineralData,
     mineral_count: u32,
 
-    teamState: ^TeamState,
+    teamState: TeamState,
 
 }
