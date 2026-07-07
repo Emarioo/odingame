@@ -83,12 +83,16 @@ AssetStorage :: struct {
     art_watcher: util.Watcher,
 }
 
+shorten_path :: proc (state: ^EngineState, path: string) -> string {
+    return strings.cut(path, len(state.storage.art_watcher.root)+1)
+}
+
 register_asset_from_store :: proc (state: ^EngineState, name: string, rel_path: string) -> ^Asset {
     fixed := strings.concatenate({state.storage.game_directory, "/assets/", rel_path})
     return register_asset(state, name, fixed)
 }
 register_asset :: proc (state: ^EngineState, name: string, path: string) -> ^Asset {
-    fmt.printfln("Register %v", path)
+    fmt.printfln("Register %v", shorten_path(state, path))
     asset := new(Asset)
     asset.name = strings.clone(name)
     asset.path = strings.clone(path)
@@ -141,10 +145,10 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.T
     // Here we assume two threads can't reload an asset at the same time.
     // Race condition if this happens.
     if asset.status != .READY {
-        fmt.printfln("Submit reload (already reloading) %v from %v", asset.name, asset.path)
+        fmt.printfln("Submit reload (already reloading) %v from %v", asset.name, shorten_path(state, asset.path))
         return
     }
-    fmt.printfln("Submit reload %v from %v", asset.name, asset.path)
+    fmt.printfln("Submit reload %v from %v", asset.name, shorten_path(state, asset.path))
 
     asset.scheduled_time = scheduled_time
     asset.submit_time = time.now()
@@ -163,7 +167,7 @@ reload_asset :: proc (state: ^EngineState, asset: ^Asset, scheduled_time: time.T
 
 process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
     // caller needs to change state and lock asset schedule arrays
-    fmt.printfln("Process (main) %v", asset.path)
+    fmt.printfln("Process (main) %v", shorten_path(state, asset.path))
     
 
     switch asset.type {
@@ -173,7 +177,7 @@ process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
             }
             load_model(asset.path, asset.wip_model)
         case .SHADER:
-            fmt.printfln("ASSET SHADER WAS ADDED TO MAIN PROCESSING! %v", asset.name, asset.path)
+            fmt.printfln("ASSET SHADER WAS ADDED TO MAIN PROCESSING! %v", asset.name, shorten_path(state, asset.path))
             // False would tell CALLER that the asset isn't done yet.
             // To prevent infinite processing we return true.
             return true
@@ -187,7 +191,7 @@ process_asset_main :: proc (state: ^EngineState, asset: ^Asset) -> bool {
 
 
 process_asset_render :: proc (state: ^EngineState, asset: ^Asset) -> bool {
-    fmt.printfln("Process (render) %v", asset.path)
+    fmt.printfln("Process (render) %v", shorten_path(state, asset.path))
 
     switch asset.type {
         case .MODEL:
@@ -257,7 +261,7 @@ process_assets :: proc (state: ^EngineState, thread_type: ThreadType) {
         
         if finished {
             asset_to_process.loaded_time = time.now()
-            fmt.printfln("Loaded asset '%v' %v %v", asset_to_process.path, asset_to_process.processing_time, time.diff(asset_to_process.submit_time, asset_to_process.loaded_time))
+            fmt.printfln("Loaded asset '%v' %v %v", shorten_path(state, asset_to_process.path), asset_to_process.processing_time, time.diff(asset_to_process.submit_time, asset_to_process.loaded_time))
             asset_to_process = nil
         }
     }

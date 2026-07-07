@@ -4,6 +4,8 @@
 
 package orbis
 
+import "core:math/linalg/glsl"
+
 TeamState :: struct {
     idle_workers: [dynamic]u32,
 
@@ -110,7 +112,7 @@ update_threat :: proc (state: ^GameState, teamState: ^TeamState) {
                 break
             }
 
-            add_command_mine(unit, close_mineral, close_storage)
+            add_command_mine(state, unit, close_mineral, close_storage)
         }
     }
 

@@ -198,7 +198,7 @@ render_tile :: proc (render: ^engine.RenderState, terrain: ^Terrain, tile: ^Tile
 
     gl.BindVertexArray(terrain.cube_mesh.vao)
 
-    color: vec3
+    color: vec3 = vec3{0,1,0}
     switch tile.front_type {
         case .GRASS: {
             color = hex_color_to_vec3("#0cc249ff")
@@ -209,7 +209,7 @@ render_tile :: proc (render: ^engine.RenderState, terrain: ^Terrain, tile: ^Tile
     }
 
     loc := tile_shader.uniforms["color"]
-    if loc.location != 0 {
+    if loc.size != 0 {
         gl.Uniform4f(loc.location, color.x, color.y, color.z, 1.0)
     }
     gl.DrawElements(gl.TRIANGLES, terrain.cube_mesh.index_count, gl.UNSIGNED_INT, nil)

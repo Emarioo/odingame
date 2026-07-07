@@ -266,7 +266,7 @@ render_worker :: proc (state: ^GameState, worker: ^WorkerData) {
     color := hex_color_to_vec3("#5a1370ff")
 
     loc := shader.uniforms["color"]
-    if loc.location != 0 {
+    if loc.size != 0 {
         gl.Uniform4f(loc.location, color.x, color.y, color.z, 1.0)
     }
     gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
@@ -298,7 +298,7 @@ render_mineral :: proc (state: ^GameState, unit: ^MineralData) {
     color := hex_color_to_vec3("#87d4dfff")
 
     loc := shader.uniforms["color"]
-    if loc.location != 0 {
+    if loc.size != 0 {
         gl.Uniform4f(loc.location, color.x, color.y, color.z, 1.0)
     }
     gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)
@@ -330,7 +330,7 @@ render_storage :: proc (state: ^GameState, unit: ^StorageData) {
     color := hex_color_to_vec3("#f0ff9aff")
 
     loc := shader.uniforms["color"]
-    if loc.location != 0 {
+    if loc.size != 0 {
         gl.Uniform4f(loc.location, color.x, color.y, color.z, 1.0)
     }
     gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, nil)

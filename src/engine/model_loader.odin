@@ -249,7 +249,7 @@ load_model_render :: proc (model: ^Model) {
         end := time.now()
 
         
-        fmt.printfln("%v", time.diff(start, end))
+        // fmt.printfln("%v", time.diff(start, end))
         
         delete(mesh.vertex_data)
         delete(mesh.indices)

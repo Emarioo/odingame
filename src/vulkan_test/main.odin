@@ -9,6 +9,7 @@ import "core:fmt"
 import "core:strings"
 import "core:time"
 import "core:os"
+import "core:os/os2"
 import "core:dynlib"
 import "base:runtime"
 import "core:c"
@@ -62,6 +63,11 @@ State :: struct {
     fence_inFlight: [MAX_FRAMES_IN_FLIGHT]vk.Fence,
 
     frame_resized: bool,
+
+
+    vertex_data: []f32,
+    vertexBindingDescription: vk.VertexInputBindingDescription,
+    vertexAttributeDescrptions: [2]vk.VertexInputAttributeDescription,
 }
 
 check_error :: proc (err: vk.Result, msg: string) {
@@ -77,6 +83,38 @@ main :: proc () {
     state: State
     
     glfw.Init()
+
+
+    when ODIN_OS == .Windows {
+        args := []string{
+            "python",
+            "src/vulkan_test/fix_shaders.py",
+        }
+    } else {
+        args := []string{
+            "python3",
+            "src/vulkan_test/fix_shaders.py",
+        }
+    }
+
+    handle, err := os2.process_start(
+        os2.Process_Desc{
+            working_dir = "",
+            command = args,
+            env =  []string{},
+            stderr = os2.stderr,
+            stdout = os2.stdout,
+            stdin = os2.stdin,
+        }
+    )
+    if err == os2.ERROR_NONE {
+        err = os2.process_close(handle)
+        if err != os2.ERROR_NONE {
+            fmt.printfln("process_close: %v", err)
+        }
+    } else {
+        fmt.printfln("process_start: %v", err)
+    }
     
     glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API);
     // glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE);
@@ -169,6 +207,13 @@ main :: proc () {
             check_error(res, "fence failed")
         }
     }
+
+    _vertex_data: [?]f32 = {
+        0.0, -0.5, 1.0, 0.0, 0.0,
+        0.5, 0.5, 0.0, 1.0, 0.0,
+        -0.5, 0.5, 0.0, 0.0, 1.0,
+    };
+    state.vertex_data = _vertex_data
 
     // fmt.println("Capabilities", state.capabilities)
     // fmt.println("Formats", state.formats)
@@ -271,6 +316,22 @@ main :: proc () {
     dynlib.unload_library(vulkan_dll)
     
     fmt.println("Finish");
+}
+
+make_vertex_buffer :: proc (state: ^State) {
+    state.vertexBindingDescription.binding = 0
+    state.vertexBindingDescription.stride = 5*4
+    state.vertexBindingDescription.inputRate = .VERTEX
+
+    state.vertexAttributeDescrptions[0].binding = 0
+    state.vertexAttributeDescrptions[0].location = 0
+    state.vertexAttributeDescrptions[0].format = .R32G32_SFLOAT
+    state.vertexAttributeDescrptions[0].offset = 0
+    state.vertexAttributeDescrptions[1].binding = 0
+    state.vertexAttributeDescrptions[1].location = 1
+    state.vertexAttributeDescrptions[1].format = .R32G32B32_SFLOAT
+    state.vertexAttributeDescrptions[1].offset = 12
+
 }
 
 FrameBufferResize :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
